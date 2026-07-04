@@ -271,6 +271,7 @@
       if (state.openDropdown && String(state.openDropdown).startsWith('inline:')) return true;
       const active = document.activeElement;
       if (!active || !active.dataset) return false;
+      if (active.id === 'filterQuery') return true;
       if (active.dataset.inlineNode && active.dataset.inlineField) return true;
       const dropdown = active.closest ? active.closest('[data-dropdown]') : null;
       return Boolean(dropdown && dropdown.dataset && String(dropdown.dataset.dropdown || '').startsWith('inline:'));

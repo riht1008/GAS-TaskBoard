@@ -1483,6 +1483,17 @@ function wbsTodayText_() {
   return y + '-' + m + '-' + d;
 }
 
+function wbsDefaultTimeZone_() {
+  if (typeof Session !== 'undefined' && Session.getScriptTimeZone) {
+    try {
+      return Session.getScriptTimeZone() || 'Asia/Tokyo';
+    } catch (error) {
+      return 'Asia/Tokyo';
+    }
+  }
+  return 'Asia/Tokyo';
+}
+
 function wbsDateTextInTimeZone_(value, timeZone) {
   const text = wbsClean_(value);
   if (!text) {
@@ -1495,7 +1506,7 @@ function wbsDateTextInTimeZone_(value, timeZone) {
   if (Number.isNaN(date.getTime())) {
     return '';
   }
-  const zone = timeZone || 'Asia/Tokyo';
+  const zone = timeZone || wbsDefaultTimeZone_();
   if (typeof Utilities !== 'undefined' && Utilities.formatDate) {
     return Utilities.formatDate(date, zone, 'yyyy-MM-dd');
   }

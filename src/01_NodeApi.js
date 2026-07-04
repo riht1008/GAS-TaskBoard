@@ -277,7 +277,12 @@ function restoreNode(payload) {
       throw new Error('親タスクが削除済みのため復元できません。');
     }
 
-    const targetIds = [nodeId].concat(collectDescendantIds_(nodeId, childrenMap_(rows.nodes)));
+    const deletedAt = cleanString_(node.DeletedAt);
+    const descendantIds = collectDescendantIds_(nodeId, childrenMap_(rows.nodes)).filter(function (id) {
+      const row = nodesById[id];
+      return row && cleanString_(row.DeletedAt) === deletedAt;
+    });
+    const targetIds = [nodeId].concat(descendantIds);
     const now = nowIso_();
     const targets = targetIds.map(function (id) {
       const row = nodesById[id];

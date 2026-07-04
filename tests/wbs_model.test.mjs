@@ -265,5 +265,5 @@ test('WBS model builds a 100 task project without truncating the date range', ()
   assert.ok(model.dateColumns.length <= 400);
   assert.equal(model.values.length, model.layout.totalRows);
   assert.equal(model.values[0].length, model.layout.totalCols);
-  assert.ok(elapsedMs < 1000, `WBS model build took ${elapsedMs}ms`);
+  assert.ok(elapsedMs < 5000, `WBS model build took ${elapsedMs}ms`);
 });

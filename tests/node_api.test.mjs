@@ -144,6 +144,27 @@ test('restoreNode restores a deleted subtree and rolls parent statuses up', () =
   assert.equal(result.requestId, 'req-1');
 });
 
+test('restoreNode does not restore descendants deleted by older operations', () => {
+  mockRows = {
+    statusColumns,
+    nodes: [
+      { NodeId: 'root', ParentId: '', Name: 'Root', StatusColumnId: 'todo' },
+      { NodeId: 'parent', ParentId: 'root', Name: 'Parent', StatusColumnId: 'todo', DeletedAt: '2026-07-04T00:00:00.000Z', DeletedBy: 'actor-1' },
+      { NodeId: 'current-child', ParentId: 'parent', Name: 'Current Child', StatusColumnId: 'done', DeletedAt: '2026-07-04T00:00:00.000Z', DeletedBy: 'actor-1' },
+      { NodeId: 'old-child', ParentId: 'parent', Name: 'Old Child', StatusColumnId: 'todo', DeletedAt: '2026-06-20T00:00:00.000Z', DeletedBy: 'actor-2' }
+    ]
+  };
+  writes = [];
+
+  const result = restoreNode({ nodeId: 'parent', requestId: 'req-old-child' });
+
+  assert.deepEqual(result.restoredNodeIds, ['parent', 'current-child']);
+  assert.equal(mockRows.nodes.find(node => node.NodeId === 'parent').DeletedAt, '');
+  assert.equal(mockRows.nodes.find(node => node.NodeId === 'current-child').DeletedAt, '');
+  assert.equal(mockRows.nodes.find(node => node.NodeId === 'old-child').DeletedAt, '2026-06-20T00:00:00.000Z');
+  assert.deepEqual(writes[0].objects.map(node => node.NodeId), ['parent', 'current-child']);
+});
+
 test('restoreNode rejects restoring a child whose parent is still deleted', () => {
   mockRows = {
     statusColumns,

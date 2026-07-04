@@ -1001,6 +1001,8 @@
     function reopenDetailDraftAfterConflict(nodeId, snapshot) {
       const target = state.nodesById.get(nodeId);
       if (!target || !snapshot) return;
+      if (state.drawerNodeId && state.drawerNodeId !== nodeId) return;
+      if (state.detailDraftNodeId && state.detailDraftNodeId !== nodeId) return;
       state.drawerNodeId = nodeId;
       state.detailDraftNodeId = nodeId;
       state.detailDraft = {
