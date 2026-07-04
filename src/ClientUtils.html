@@ -397,17 +397,7 @@
     }
 
     function compareNodeForList(a, b) {
-      const field = state.listSort.field;
-      const dir = state.listSort.dir;
-      if (field === 'sortOrder') return compareNodeOrder(a, b);
-      let av = field === 'status' ? statusName(a.statusColumnId) : a[field];
-      let bv = field === 'status' ? statusName(b.statusColumnId) : b[field];
-      if (field === 'progress') {
-        av = Number(av) || 0;
-        bv = Number(bv) || 0;
-        return (av - bv) * dir || compareNodeOrder(a, b);
-      }
-      return String(av || '').localeCompare(String(bv || ''), 'ja') * dir || compareNodeOrder(a, b);
+      return compareNodeOrder(a, b);
     }
 
     function currentUpdatedAt(nodeId) {
@@ -860,6 +850,9 @@
       if (!toast || !toast.action) return;
       if (toast.action.type === 'openNode' && toast.action.nodeId) {
         openNode(toast.action.nodeId);
+      }
+      if (toast.action.type === 'restoreNode' && toast.action.nodeId) {
+        restoreDeletedNode(toast.action.nodeId);
       }
     }
 

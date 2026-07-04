@@ -352,7 +352,6 @@
         handle.addEventListener('dragstart', event => {
           event.stopPropagation();
           state.draggedNodeId = handle.dataset.nodeDragHandle;
-          state.listSort = { field: 'sortOrder', dir: 1 };
           event.dataTransfer.effectAllowed = 'move';
           event.dataTransfer.setData('text/plain', state.draggedNodeId);
           const row = handle.closest('[data-tree-node]');
@@ -384,14 +383,6 @@
             if (plan.newParentId) state.collapsed.delete(plan.newParentId);
             moveNodeTo(nodeId, plan.newParentId, plan.newSortOrder);
           }
-        });
-      });
-      document.querySelectorAll('[data-sort-field]').forEach(button => {
-        button.addEventListener('click', () => {
-          const field = button.dataset.sortField;
-          state.listSort.dir = state.listSort.field === field ? state.listSort.dir * -1 : 1;
-          state.listSort.field = field;
-          render();
         });
       });
     }

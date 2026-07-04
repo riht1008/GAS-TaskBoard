@@ -34,7 +34,6 @@
     }
 
     function showListCreatePreview(parentId) {
-      if (state.listSort.field !== 'sortOrder') return;
       const anchorId = lastVisibleDescendantId(parentId);
       const anchor = document.querySelector(`tr[data-tree-node="${cssEscape(anchorId)}"]`);
       if (!anchor || !anchor.parentElement) return;
@@ -55,7 +54,6 @@
     }
 
     function showGanttCreatePreview(parentId) {
-      if (state.listSort.field !== 'sortOrder') return;
       const anchorId = lastVisibleDescendantId(parentId);
       const anchor = document.querySelector(`.gantt-tree-row[data-tree-node="${cssEscape(anchorId)}"]`);
       const frame = document.querySelector('.gantt-frame');
@@ -1064,6 +1062,7 @@
       const removed = state.nodes.filter(node => targetIds.includes(node.id)).map(cloneNode);
       const parentIds = Array.from(new Set(removed.map(node => node.parentId).filter(Boolean)));
       const rollbackNodes = rollbackSnapshotForSeeds(parentIds).concat(removed);
+      const deletedCount = targetIds.length;
       closeDialog(false);
       if (state.drawerNodeId === nodeId) closeDrawer({ skipShellCleanup: true });
       queueNodeMutation(nodeId, 'deleteNode', () => ({ nodeId }), () => {
@@ -1073,6 +1072,29 @@
         snapshot: () => rollbackNodes,
         rollback: snapshot => {
           mergeNodes(snapshot || []);
+        },
+        onSuccess: () => {
+          showToast(`${deletedCount}件を削除しました`, 'warning', {
+            sticky: true,
+            actionLabel: '元に戻す',
+            action: { type: 'restoreNode', nodeId }
+          });
+        }
+      });
+    }
+
+    function restoreDeletedNode(nodeId) {
+      if (!nodeId) return;
+      queueNodeMutation(nodeId, 'restoreNode', () => ({ nodeId }), null, {
+        snapshot: () => [],
+        onSuccess: result => {
+          const restoredId = (result.restoredNodeIds || [])[0] || nodeId;
+          showToast('タスクを復元しました', 'success');
+          const restored = state.nodesById.get(restoredId);
+          if (restored) {
+            state.collapsed.delete(restored.parentId || '');
+            openNode(restoredId);
+          }
         }
       });
     }

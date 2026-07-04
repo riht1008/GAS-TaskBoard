@@ -255,6 +255,55 @@ function deleteNode(payload) {
   });
 }
 
+function restoreNode(payload) {
+  payload = payload || {};
+  return withLock_(function () {
+    requireSchemaExists_();
+    const actor = requireCurrentMember_();
+    const requestId = cleanString_(payload.requestId);
+    let rows = readAll_();
+    const nodesById = byId_(rows.nodes, 'NodeId');
+    const nodeId = cleanString_(payload.nodeId);
+    const node = nodesById[nodeId];
+    if (!node) {
+      throw new Error('ノードが見つかりません。');
+    }
+    if (!cleanString_(node.DeletedAt)) {
+      return makeMutationPayload_(rows, [nodeId], requestId, { restoredNodeIds: [] });
+    }
+    const parentId = cleanString_(node.ParentId);
+    const parent = parentId ? nodesById[parentId] : null;
+    if (parent && cleanString_(parent.DeletedAt)) {
+      throw new Error('親タスクが削除済みのため復元できません。');
+    }
+
+    const targetIds = [nodeId].concat(collectDescendantIds_(nodeId, childrenMap_(rows.nodes)));
+    const now = nowIso_();
+    const targets = targetIds.map(function (id) {
+      const row = nodesById[id];
+      row.DeletedAt = '';
+      row.DeletedBy = '';
+      row.UpdatedAt = now;
+      row.UpdatedBy = actor.MemberId;
+      return row;
+    }).filter(Boolean);
+    writeObjects_(SHEET.NODES, targets);
+
+    rows = readAll_();
+    const rollupWriteMap = {};
+    const rollupIds = rollupParentStatuses_(rows, [nodeId, parentId], actor.MemberId, rollupWriteMap);
+    if (rollupIds.length) {
+      writeObjects_(SHEET.NODES, Object.keys(rollupWriteMap).map(function (id) { return rollupWriteMap[id]; }));
+      rows = readAll_();
+    }
+    const active = activeNodes_(rows.nodes);
+    const affectedIds = unique_(targetIds.concat([parentId]).concat(rollupIds).concat(ancestorIds_(nodeId, active)));
+    return makeMutationPayload_(rows, affectedIds, requestId, {
+      restoredNodeIds: targetIds
+    });
+  });
+}
+
 function fitNodeToChildren(payload) {
   payload = payload || {};
   return withLock_(function () {
@@ -455,6 +504,7 @@ function appendNodeActivityLogs_(nodeId, change) {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     rollupParentStatuses_: rollupParentStatuses_,
-    inProgressStatusColumnId_: inProgressStatusColumnId_
+    inProgressStatusColumnId_: inProgressStatusColumnId_,
+    restoreNode: restoreNode
   };
 }

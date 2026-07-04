@@ -201,3 +201,69 @@ test('WBS progress output floors derived parent progress to valid options', () =
   const parentRow = model.taskRows.find(row => row.node.NodeId === 'parent');
   assert.equal(model.values[parentRow.sheetRow - 1][model.layout.progressCol - 1], 0.9);
 });
+
+test('WBS model builds a 100 task project without truncating the date range', () => {
+  const rows = baseRows();
+  rows.nodes = [
+    { NodeId: 'root', ParentId: '', Name: '案件', StatusColumnId: 'todo', SortOrder: 1000 }
+  ];
+  for (let phase = 1; phase <= 10; phase += 1) {
+    const phaseId = `phase-${phase}`;
+    rows.nodes.push({
+      NodeId: phaseId,
+      ParentId: 'root',
+      Name: `Phase ${phase}`,
+      StatusColumnId: 'todo',
+      SortOrder: phase * 1000,
+      StartDate: '2026-07-01',
+      EndDate: '2026-10-31'
+    });
+    for (let task = 1; task <= 10; task += 1) {
+      const day = (phase - 1) * 10 + task;
+      const start = new Date(Date.UTC(2026, 6, 1 + day));
+      const end = new Date(Date.UTC(2026, 6, 2 + day));
+      const dateText = date => `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+      rows.nodes.push({
+        NodeId: `task-${phase}-${task}`,
+        ParentId: phaseId,
+        Name: `Task ${phase}-${task}`,
+        StatusColumnId: task % 5 === 0 ? 'done' : 'todo',
+        SortOrder: task * 1000,
+        Progress: task % 5 === 0 ? 100 : 45,
+        StartDate: dateText(start),
+        EndDate: dateText(end)
+      });
+    }
+  }
+  rows.milestones = [
+    { MilestoneId: 'ms1', Name: '中間レビュー', Date: '2026-08-15', SortOrder: 1000 },
+    { MilestoneId: 'ms2', Name: '完了判定', Date: '2026-10-15', SortOrder: 2000 }
+  ];
+  rows.meetings = [
+    {
+      MeetingId: 'weekly',
+      Name: '週次定例',
+      Schedule: '毎週金曜日',
+      ScheduleRuleJson: JSON.stringify({ type: 'weekly', interval: 1, startDate: '2026-07-03', endDate: '', weekday: 5 }),
+      StartDate: '2026-07-03',
+      EndDate: '',
+      SortOrder: 1000
+    }
+  ];
+
+  const startedAt = Date.now();
+  const model = buildWbsModel_(rows, {
+    actorName: '佐藤',
+    now: '2026-07-03T00:00:00.000Z',
+    createdAt: '2026-07-03T00:00:00.000Z',
+    version: 1
+  });
+  const elapsedMs = Date.now() - startedAt;
+
+  assert.equal(model.taskRows.length, 110);
+  assert.equal(model.warning, '');
+  assert.ok(model.dateColumns.length <= 400);
+  assert.equal(model.values.length, model.layout.totalRows);
+  assert.equal(model.values[0].length, model.layout.totalCols);
+  assert.ok(elapsedMs < 1000, `WBS model build took ${elapsedMs}ms`);
+});

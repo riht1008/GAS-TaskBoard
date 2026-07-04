@@ -7,6 +7,15 @@ global.byId_ = (rows, idField) => rows.reduce((map, row) => {
   map[global.cleanString_(row[idField])] = row;
   return map;
 }, {});
+global.childrenMap_ = nodes => nodes.reduce((map, row) => {
+  const parentId = global.cleanString_(row.ParentId);
+  if (!map[parentId]) map[parentId] = [];
+  map[parentId].push(global.cleanString_(row.NodeId));
+  return map;
+}, {});
+global.visibleDependencies_ = (dependencies, nodesById) => dependencies.filter(dep => (
+  nodesById[global.cleanString_(dep.PredecessorNodeId)] && nodesById[global.cleanString_(dep.SuccessorNodeId)]
+));
 global.hasSchedule_ = node => Boolean(node && node.StartDate && node.EndDate && node.StartDate <= node.EndDate);
 global.dateToDay_ = dateText => {
   const parts = dateText.split('-').map(Number);
@@ -21,7 +30,7 @@ global.cloneRow_ = row => Object.assign({}, row);
 global.nowIso_ = () => '2026-07-05T00:00:00.000Z';
 
 const require = createRequire(import.meta.url);
-const { rescheduleFromSeeds_, topoSortSubset_ } = require('../src/04_DependencyApi.js');
+const { rescheduleFromSeeds_, topoSortSubset_, validateDependency_ } = require('../src/04_DependencyApi.js');
 
 function node(id, start, end) {
   return {
@@ -38,6 +47,14 @@ function dep(from, to) {
     PredecessorNodeId: from,
     SuccessorNodeId: to
   };
+}
+
+function rowsWithParentDependencyTarget() {
+  return [
+    Object.assign(node('parent', '2026-07-01', '2026-07-05'), { ParentId: '' }),
+    Object.assign(node('child', '2026-07-01', '2026-07-02'), { ParentId: 'parent' }),
+    Object.assign(node('successor', '2026-07-03', '2026-07-04'), { ParentId: '' })
+  ];
 }
 
 test('reschedule handles merge dependencies using the latest predecessor end date', () => {
@@ -95,5 +112,20 @@ test('topoSortSubset rejects dependency cycles', () => {
   assert.throws(
     () => topoSortSubset_(['a', 'b'], [dep('a', 'b'), dep('b', 'a')]),
     /循環/
+  );
+});
+
+test('validateDependency rejects parent nodes as dependency endpoints', () => {
+  assert.throws(
+    () => validateDependency_('parent', 'successor', rowsWithParentDependencyTarget(), []),
+    /末端ノード/
+  );
+});
+
+test('validateDependency rejects duplicate dependencies', () => {
+  const nodes = [node('p', '2026-07-01', '2026-07-02'), node('s', '2026-07-03', '2026-07-04')];
+  assert.throws(
+    () => validateDependency_('p', 's', nodes, [dep('p', 's')]),
+    /既に存在/
   );
 });
