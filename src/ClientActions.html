@@ -943,6 +943,7 @@
       const wasShell = state.shellNodeId === node.id;
       const parentId = node.parentId || state.rootId;
       const reopenDraft = wasShell ? { ...patch, assigneeIds: patch.assigneeIds.slice() } : null;
+      const conflictDraft = !wasShell ? detailSnapshotFromDraft(draft) : null;
       if (wasShell) {
         clearShellTracking();
         state.drawerNodeId = '';
@@ -960,7 +961,12 @@
         baseUpdatedAt: wasShell ? undefined : draft.baseUpdatedAt,
         skipBaseUpdatedAt: wasShell,
         onSuccess: result => {
-          if (result && result.ok === false) return;
+          if (result && result.ok === false) {
+            if (result.code === 'CONFLICT' && conflictDraft) {
+              reopenDetailDraftAfterConflict(node.id, conflictDraft);
+            }
+            return;
+          }
           if (options.createNext) {
             createChildShell(parentId);
             return;
@@ -992,6 +998,29 @@
           state.focusDetailName = true;
         }
       });
+    }
+
+    function reopenDetailDraftAfterConflict(nodeId, snapshot) {
+      const target = state.nodesById.get(nodeId);
+      if (!target || !snapshot) return;
+      state.drawerNodeId = nodeId;
+      state.detailDraftNodeId = nodeId;
+      state.detailDraft = {
+        baseUpdatedAt: target.updatedAt || '',
+        name: snapshot.name,
+        statusColumnId: snapshot.statusColumnId,
+        priority: snapshot.priority,
+        assigneeIds: snapshot.assigneeIds.slice(),
+        startDate: snapshot.startDate,
+        endDate: snapshot.endDate,
+        description: snapshot.description,
+        deliverable: snapshot.deliverable,
+        note: snapshot.note,
+        progress: snapshot.progress,
+        includeInWbs: snapshot.includeInWbs,
+        dependency: { predecessorId: '', successorId: '' }
+      };
+      render();
     }
 
     function fitChildren(nodeId) {

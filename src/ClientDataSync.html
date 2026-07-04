@@ -233,6 +233,11 @@
         render();
         return;
       }
+      if (shouldDeferFullSyncApply()) {
+        state.syncStatus = 'pending';
+        if (force) showToast('編集中のため同期結果の適用を保留しました', 'warning');
+        return;
+      }
       const generation = state.mutationGeneration;
       state.syncStatus = 'syncing';
       if (!silent || force) render();
@@ -244,10 +249,10 @@
           renderSetup();
           return;
         }
-        if (hasPendingMutations() || state.mutationGeneration !== generation || state.ganttCreateDrag) {
+        if (hasPendingMutations() || state.mutationGeneration !== generation || state.ganttCreateDrag || shouldDeferFullSyncApply()) {
           state.syncStatus = 'pending';
-          if (force) showToast('保存中の変更があるため、同期結果の適用を保留', 'warning');
-          render();
+          if (force) showToast('編集中または保存中のため、同期結果の適用を保留しました', 'warning');
+          if (!shouldDeferFullSyncApply()) render();
           return;
         }
         applyFullData(data);
@@ -259,6 +264,16 @@
         if (!silent || force) showToast(error.message, 'error');
         render();
       }
+    }
+
+    function shouldDeferFullSyncApply() {
+      if (state.textComposing || state.ganttCreateDrag) return true;
+      if (state.openDropdown && String(state.openDropdown).startsWith('inline:')) return true;
+      const active = document.activeElement;
+      if (!active || !active.dataset) return false;
+      if (active.dataset.inlineNode && active.dataset.inlineField) return true;
+      const dropdown = active.closest ? active.closest('[data-dropdown]') : null;
+      return Boolean(dropdown && dropdown.dataset && String(dropdown.dataset.dropdown || '').startsWith('inline:'));
     }
 
     function rebuildIndexes() {
@@ -280,9 +295,10 @@
         if (Array.isArray(result.nodes)) mergeNodes(result.nodes);
         rebuildIndexes();
         if (result.code === 'CONFLICT') {
-          showToast(result.message || '他のユーザーが更新しました。', 'warning', {
+          updateDetailDraftBaseAfterConflict(result);
+          showToast(result.message || '他のユーザーが更新しました。入力内容は保持しています。もう一度保存すると現在の内容で上書きします。', 'warning', {
             sticky: true,
-            actionLabel: '最新の内容を見る',
+            actionLabel: '最新を開き直す',
             action: { type: 'openNode', nodeId: result.nodeId || '' }
           });
         } else {
@@ -327,6 +343,13 @@
         showToast(`後続タスク${result.rescheduledCount}件の日程を自動調整しました`, 'success');
       }
       render();
+    }
+
+    function updateDetailDraftBaseAfterConflict(result) {
+      const nodeId = result && result.nodeId;
+      if (!nodeId || state.drawerNodeId !== nodeId || !state.detailDraft) return;
+      const latest = state.nodesById.get(nodeId);
+      if (latest) state.detailDraft.baseUpdatedAt = latest.updatedAt || '';
     }
 
     function mergeNodes(nodes) {

@@ -447,7 +447,7 @@ function buildWbsDateRange_(visibleRows, derived, options, milestones, meetings)
     startDay = Math.min.apply(null, days) - 7;
     endDay = Math.max.apply(null, days) + 7;
   } else {
-    const today = wbsClean_(options.today) || wbsClean_(options.now).slice(0, 10) || wbsTodayText_();
+    const today = wbsClean_(options.today) || wbsDateTextInTimeZone_(options.now) || wbsTodayText_();
     startDay = wbsDateToDay_(today) - 7;
     endDay = wbsDateToDay_(today) + 30;
   }
@@ -465,7 +465,7 @@ function buildWbsDateRange_(visibleRows, derived, options, milestones, meetings)
 
 function fillWbsStaticSections_(values, backgrounds, layout, context) {
   const rootName = wbsClean_(wbsGet_(context.root, 'Name', 'name')) || 'プロジェクト';
-  const nowDate = wbsClean_(context.options.now).slice(0, 10) || wbsTodayText_();
+  const nowDate = wbsDateTextInTimeZone_(context.options.now) || wbsTodayText_();
   const plannedStarts = [];
   const plannedEnds = [];
   context.visibleRows.forEach(function (row) {
@@ -965,11 +965,12 @@ function deriveActuals_(logs, options) {
       if (!changedAt) {
         return;
       }
+      const changedDate = wbsDateTextInTimeZone_(changedAt);
       if (field === 'status') {
-        startCandidates.push(changedAt.slice(0, 10));
+        if (changedDate) startCandidates.push(changedDate);
       }
       if (field === 'progress' && Number(wbsGet_(log, 'NewValue', 'newValue')) > 0) {
-        startCandidates.push(changedAt.slice(0, 10));
+        if (changedDate) startCandidates.push(changedDate);
       }
     });
     const currentProgress = Number(options.progressByNodeId && options.progressByNodeId[nodeId]) || 0;
@@ -977,7 +978,7 @@ function deriveActuals_(logs, options) {
     if (currentProgress === 100) {
       nodeLogs.forEach(function (log) {
         if (wbsIsTrue_(wbsGet_(log, 'NewValueIsDone', 'newValueIsDone'))) {
-          endDate = wbsClean_(wbsGet_(log, 'ChangedAt', 'changedAt')).slice(0, 10);
+          endDate = wbsDateTextInTimeZone_(wbsGet_(log, 'ChangedAt', 'changedAt'));
         }
       });
     }
@@ -1482,12 +1483,46 @@ function wbsTodayText_() {
   return y + '-' + m + '-' + d;
 }
 
+function wbsDateTextInTimeZone_(value, timeZone) {
+  const text = wbsClean_(value);
+  if (!text) {
+    return '';
+  }
+  if (wbsIsValidDate_(text)) {
+    return text;
+  }
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+  const zone = timeZone || 'Asia/Tokyo';
+  if (typeof Utilities !== 'undefined' && Utilities.formatDate) {
+    return Utilities.formatDate(date, zone, 'yyyy-MM-dd');
+  }
+  if (typeof Intl !== 'undefined' && Intl.DateTimeFormat) {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: zone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).formatToParts(date).reduce(function (memo, part) {
+      memo[part.type] = part.value;
+      return memo;
+    }, {});
+    if (parts.year && parts.month && parts.day) {
+      return parts.year + '-' + parts.month + '-' + parts.day;
+    }
+  }
+  return date.toISOString().slice(0, 10);
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     buildWbsModel_: buildWbsModel_,
     deriveActuals_: deriveActuals_,
     filterWbsTree_: filterWbsTree_,
     computeWbsDerived_: computeWbsDerived_,
+    wbsDateTextInTimeZone_: wbsDateTextInTimeZone_,
     wbsColumnLetter_: wbsColumnLetter_
   };
 }

@@ -192,3 +192,11 @@ function validateDependency_(predecessorId, successorId, activeNodes, dependenci
   }]);
   topoSortSubset_(Object.keys(nodesById), testDeps);
 }
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    rescheduleFromSeeds_: rescheduleFromSeeds_,
+    topoSortSubset_: topoSortSubset_,
+    validateDependency_: validateDependency_
+  };
+}

@@ -174,6 +174,15 @@ test('deriveActuals uses first activity and last done snapshot only for current 
   assert.deepEqual(actuals.n2, { startDate: '2026-07-06', endDate: '' });
 });
 
+test('deriveActuals converts UTC timestamps to Asia/Tokyo dates', () => {
+  const logs = [
+    { NodeId: 'n1', Field: 'progress', NewValue: 15, NewValueIsDone: false, ChangedAt: '2026-07-04T15:30:00.000Z' },
+    { NodeId: 'n1', Field: 'progress', NewValue: 100, NewValueIsDone: true, ChangedAt: '2026-07-04T16:00:00.000Z' }
+  ];
+  const actuals = deriveActuals_(logs, { progressByNodeId: { n1: 100 } });
+  assert.deepEqual(actuals.n1, { startDate: '2026-07-05', endDate: '2026-07-05' });
+});
+
 test('WBS progress output floors derived parent progress to valid options', () => {
   const rows = baseRows();
   rows.nodes = [

@@ -34,10 +34,26 @@ function requireSchemaExists_() {
 function ensureSheet_(sheetName) {
   const ss = SpreadsheetApp.getActive();
   let sheet = ss.getSheetByName(sheetName);
+  const headers = HEADERS[sheetName];
   if (!sheet) {
     sheet = ss.insertSheet(sheetName);
+    initializeSheet_(sheetName, sheet, headers);
+    return;
   }
-  const headers = HEADERS[sheetName];
+  const maxColumns = sheet.getMaxColumns();
+  if (maxColumns < headers.length) {
+    sheet.insertColumnsAfter(maxColumns, headers.length - maxColumns);
+    initializeSheet_(sheetName, sheet, headers);
+    return;
+  }
+  const currentHeaders = sheet.getRange(1, 1, 1, headers.length).getValues()[0].map(cleanString_);
+  const headersMatch = headers.every(function (header, index) { return currentHeaders[index] === header; });
+  if (!headersMatch) {
+    initializeSheet_(sheetName, sheet, headers);
+  }
+}
+
+function initializeSheet_(sheetName, sheet, headers) {
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
   sheet.setFrozenRows(1);
   applyTextFormats_(sheetName, sheet);

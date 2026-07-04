@@ -43,7 +43,7 @@ function makeConflictPayload_(rows, nodeId, requestId) {
   return {
     ok: false,
     code: 'CONFLICT',
-    message: '他のユーザーがこのノードを更新しました。最新内容を反映しました。',
+    message: '他のユーザーがこのノードを更新しました。入力内容は保持しています。もう一度保存すると現在の内容で上書きします。',
     requestId: requestId || '',
     nodeId: nodeId,
     nodes: clientNodes_(rows, affected)
