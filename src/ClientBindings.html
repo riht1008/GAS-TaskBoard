@@ -590,8 +590,8 @@
       const { scope, field } = splitControlId(id);
       if (scope === 'filters') return monthStartDay(dateToDay(state.filters.dateStart || dayToDate(localTodayDay())));
       const target = draftForScope(scope);
-      const selected = target ? target[field] : '';
-      const related = target ? (field === 'endDate' ? target.startDate : target.endDate) : '';
+      const selected = normalizeClientDateText(target ? target[field] : '');
+      const related = normalizeClientDateText(target ? (field === 'endDate' ? target.startDate : target.endDate) : '');
       return monthStartDay(dateToDay(selected || related || dayToDate(localTodayDay())));
     }
 

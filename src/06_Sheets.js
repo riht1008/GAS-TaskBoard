@@ -60,11 +60,15 @@ function initializeSheet_(sheetName, sheet, headers) {
 }
 
 function applyTextFormats_(sheetName, sheet) {
+  applyRowTextFormats_(sheetName, sheet, 1, sheet.getMaxRows());
+}
+
+function applyRowTextFormats_(sheetName, sheet, rowNumber, rowCount) {
   const headers = HEADERS[sheetName];
   (TEXT_COLUMNS[sheetName] || []).forEach(function (name) {
     const index = headers.indexOf(name);
     if (index >= 0) {
-      sheet.getRange(1, index + 1, sheet.getMaxRows(), 1).setNumberFormat('@');
+      sheet.getRange(rowNumber, index + 1, rowCount, 1).setNumberFormat('@');
     }
   });
 }
@@ -93,10 +97,10 @@ function readObjects_(sheetName) {
 }
 
 function normalizeCellValue_(sheetName, header, value) {
+  if (isDateOnlyHeader_(header)) {
+    return normalizeDateOnlyCell_(value);
+  }
   if (value instanceof Date) {
-    if (header === 'StartDate' || header === 'EndDate') {
-      return Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd');
-    }
     if (header === 'CreatedAt' || header === 'UpdatedAt' || header === 'DeletedAt' || header === 'Timestamp') {
       return value.toISOString();
     }
@@ -107,10 +111,80 @@ function normalizeCellValue_(sheetName, header, value) {
   return cleanString_(value);
 }
 
+function isDateOnlyHeader_(header) {
+  return header === 'StartDate' || header === 'EndDate' || header === 'Date';
+}
+
+function normalizeDateOnlyCell_(value) {
+  if (value instanceof Date) {
+    return formatDateOnlyCell_(value);
+  }
+  const text = cleanString_(value);
+  if (!text) {
+    return '';
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    return text;
+  }
+  if (!looksLikeDateOnlyString_(text)) {
+    return text;
+  }
+  const parsed = new Date(text);
+  if (!Number.isNaN(parsed.getTime())) {
+    return formatDateOnlyCell_(parsed);
+  }
+  return text;
+}
+
+function looksLikeDateOnlyString_(text) {
+  return /\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/.test(text) ||
+    /GMT[+-]\d{4}/.test(text) ||
+    /^\d{4}\/\d{1,2}\/\d{1,2}$/.test(text) ||
+    /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(text);
+}
+
+function formatDateOnlyCell_(date) {
+  const zone = spreadsheetTimeZone_();
+  if (typeof Utilities !== 'undefined' && Utilities.formatDate) {
+    return Utilities.formatDate(date, zone, 'yyyy-MM-dd');
+  }
+  if (typeof Intl !== 'undefined' && Intl.DateTimeFormat) {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: zone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).formatToParts(date).reduce(function (memo, part) {
+      memo[part.type] = part.value;
+      return memo;
+    }, {});
+    if (parts.year && parts.month && parts.day) {
+      return parts.year + '-' + parts.month + '-' + parts.day;
+    }
+  }
+  return date.toISOString().slice(0, 10);
+}
+
+function spreadsheetTimeZone_() {
+  if (typeof Session !== 'undefined' && Session.getScriptTimeZone) {
+    try {
+      return Session.getScriptTimeZone() || 'Asia/Tokyo';
+    } catch (error) {
+      return 'Asia/Tokyo';
+    }
+  }
+  return 'Asia/Tokyo';
+}
+
 function appendObject_(sheetName, obj) {
   const sheet = SpreadsheetApp.getActive().getSheetByName(sheetName);
   const headers = HEADERS[sheetName];
-  sheet.appendRow(headers.map(function (h) { return sheetValue_(obj[h]); }));
+  const rowNumber = sheet.getLastRow() + 1;
+  if (rowNumber > sheet.getMaxRows()) {
+    sheet.insertRowsAfter(sheet.getMaxRows(), rowNumber - sheet.getMaxRows());
+  }
+  applyRowTextFormats_(sheetName, sheet, rowNumber, 1);
+  sheet.getRange(rowNumber, 1, 1, headers.length).setValues([headers.map(function (h) { return sheetValue_(obj[h]); })]);
 }
 
 function writeObject_(sheetName, obj) {
@@ -119,6 +193,7 @@ function writeObject_(sheetName, obj) {
   }
   const sheet = SpreadsheetApp.getActive().getSheetByName(sheetName);
   const headers = HEADERS[sheetName];
+  applyRowTextFormats_(sheetName, sheet, obj.__row, 1);
   sheet.getRange(obj.__row, 1, 1, headers.length).setValues([headers.map(function (h) { return sheetValue_(obj[h]); })]);
 }
 
@@ -132,4 +207,11 @@ function writeObjects_(sheetName, rows) {
 
 function deleteRow_(sheetName, rowNumber) {
   SpreadsheetApp.getActive().getSheetByName(sheetName).deleteRow(rowNumber);
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    normalizeCellValue_: normalizeCellValue_,
+    normalizeDateOnlyCell_: normalizeDateOnlyCell_
+  };
 }

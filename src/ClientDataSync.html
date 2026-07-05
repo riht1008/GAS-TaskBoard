@@ -130,12 +130,12 @@
     }
 
     function applyFullData(data, options = {}) {
-      state.nodes = (data.nodes || []).slice();
+      state.nodes = (data.nodes || []).map(normalizeLoadedNode);
       state.members = (data.members || []).slice();
       state.statusColumns = (data.statusColumns || []).slice().sort(compareSortOrder);
       state.dependencies = (data.dependencies || []).slice();
-      state.milestones = (data.milestones || []).slice().sort(compareSortOrder);
-      state.meetings = (data.meetings || []).slice().sort(compareSortOrder);
+      state.milestones = (data.milestones || []).map(normalizeLoadedMilestone).sort(compareSortOrder);
+      state.meetings = (data.meetings || []).map(normalizeLoadedMeeting).sort(compareSortOrder);
       state.commentCounts = data.commentCounts || {};
       state.currentMember = data.currentMember || null;
       state.currentEmail = data.currentEmail || '';
@@ -315,7 +315,7 @@
         if (deleted.has(state.drawerNodeId)) closeDrawer({ skipShellCleanup: true });
         if (deleted.has(state.shellNodeId)) clearShellTracking();
       }
-      if (Array.isArray(result.nodes)) mergeNodes(result.nodes);
+      if (Array.isArray(result.nodes)) mergeNodes(result.nodes.map(normalizeLoadedNode));
       if (Array.isArray(result.members)) state.members = result.members.slice();
       if (result.currentMember) {
         state.currentMember = result.currentMember;
@@ -324,8 +324,8 @@
       }
       if (Array.isArray(result.statusColumns)) state.statusColumns = result.statusColumns.slice();
       if (Array.isArray(result.dependencies)) state.dependencies = result.dependencies.slice();
-      if (Array.isArray(result.milestones)) state.milestones = result.milestones.slice();
-      if (Array.isArray(result.meetings)) state.meetings = result.meetings.slice();
+      if (Array.isArray(result.milestones)) state.milestones = result.milestones.map(normalizeLoadedMilestone);
+      if (Array.isArray(result.meetings)) state.meetings = result.meetings.map(normalizeLoadedMeeting);
       if (result.comment) {
         const comments = state.comments.get(result.comment.nodeId) || [];
         const index = comments.findIndex(comment => comment.id === result.comment.id);

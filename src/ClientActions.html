@@ -461,7 +461,7 @@
       state.dialog.draft = {
         milestoneId: milestone.id,
         name: milestone.name,
-        date: milestone.date,
+        date: normalizeClientDateText(milestone.date),
         note: milestone.note || ''
       };
       render();
@@ -492,7 +492,8 @@
 
     function saveMilestoneFromDialog() {
       const draft = { ...state.dialog.draft };
-      if (!cleanText(draft.name) || !draft.date) {
+      const date = normalizeClientDateText(draft.date);
+      if (!cleanText(draft.name) || !date) {
         showToast('名称と日付を入力', 'error');
         return;
       }
@@ -501,7 +502,7 @@
       const optimistic = {
         id: milestoneId,
         name: cleanText(draft.name),
-        date: draft.date,
+        date,
         note: cleanText(draft.note),
         sortOrder: draft.milestoneId ? (state.milestones.find(item => item.id === draft.milestoneId) || {}).sortOrder || 0 : nextLocalSortOrder(state.milestones)
       };
@@ -509,7 +510,7 @@
         milestoneId: draft.milestoneId,
         clientMilestoneId: draft.milestoneId ? '' : milestoneId,
         name: draft.name,
-        date: draft.date,
+        date,
         note: draft.note,
         sortOrder: optimistic.sortOrder
       }, () => {

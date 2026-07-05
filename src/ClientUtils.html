@@ -172,10 +172,59 @@
     }
 
     function isClientDateText(value) {
-      const text = String(value || '');
+      const text = String(value || '').trim();
       if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return false;
       const day = dateToDay(text);
       return Number.isFinite(day) && dayToDate(day) === text;
+    }
+
+    function normalizeClientDateText(value) {
+      const text = String(value || '').trim();
+      if (!text) return '';
+      if (isClientDateText(text)) return text;
+      if (!looksLikeClientDateString(text)) return '';
+      const parsed = new Date(text);
+      if (Number.isNaN(parsed.getTime())) return '';
+      const year = parsed.getFullYear();
+      const month = String(parsed.getMonth() + 1).padStart(2, '0');
+      const day = String(parsed.getDate()).padStart(2, '0');
+      const dateText = `${year}-${month}-${day}`;
+      return isClientDateText(dateText) ? dateText : '';
+    }
+
+    function looksLikeClientDateString(text) {
+      return /\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/.test(text) ||
+        /GMT[+-]\d{4}/.test(text) ||
+        /^\d{4}\/\d{1,2}\/\d{1,2}$/.test(text) ||
+        /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(text);
+    }
+
+    function normalizeLoadedNode(node) {
+      const next = Object.assign({}, node);
+      next.startDate = normalizeClientDateText(next.startDate);
+      next.endDate = normalizeClientDateText(next.endDate);
+      next.displayStartDate = normalizeClientDateText(next.displayStartDate);
+      next.displayEndDate = normalizeClientDateText(next.displayEndDate);
+      return next;
+    }
+
+    function normalizeLoadedMilestone(milestone) {
+      const next = Object.assign({}, milestone);
+      next.date = normalizeClientDateText(next.date);
+      return next;
+    }
+
+    function normalizeLoadedMeeting(meeting) {
+      const next = Object.assign({}, meeting);
+      next.startDate = normalizeClientDateText(next.startDate);
+      next.endDate = normalizeClientDateText(next.endDate);
+      if (next.scheduleRule && typeof next.scheduleRule === 'object') {
+        next.scheduleRule = Object.assign({}, next.scheduleRule, {
+          startDate: normalizeClientDateText(next.scheduleRule.startDate),
+          endDate: normalizeClientDateText(next.scheduleRule.endDate)
+        });
+      }
+      return next;
     }
 
     function weekdayOfDateText(dateText) {

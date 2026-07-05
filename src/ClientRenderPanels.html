@@ -688,7 +688,7 @@
       const field = config.field;
       const id = `${scope}:${field}`;
       const isFilter = scope === 'filters';
-      const selected = config.selected || '';
+      const selected = normalizeClientDateText(config.selected);
       const label = isFilter
         ? formatDateFilterLabel()
         : selected
@@ -711,9 +711,12 @@
       const mode = config.scope === 'filters'
         ? (calendarState && calendarState.mode) || (state.filters.dateStart && state.filters.dateEnd && state.filters.dateStart !== state.filters.dateEnd ? 'range' : 'single')
         : 'single';
+      const selected = normalizeClientDateText(config.selected);
+      const startDate = normalizeClientDateText(config.startDate);
+      const endDate = normalizeClientDateText(config.endDate);
       const selectedForMonth = config.scope === 'filters'
-        ? (state.filters.dateStart || dayToDate(localTodayDay()))
-        : (config.selected || (config.field === 'endDate' ? config.startDate : config.endDate) || dayToDate(localTodayDay()));
+        ? (normalizeClientDateText(state.filters.dateStart) || dayToDate(localTodayDay()))
+        : (selected || (config.field === 'endDate' ? startDate : endDate) || dayToDate(localTodayDay()));
       const monthDay = calendarState && calendarState.monthDay
         ? calendarState.monthDay
         : monthStartDay(dateToDay(selectedForMonth));
@@ -768,7 +771,8 @@
       const today = localTodayDay();
       const date = new Date(day * 86400000);
       const selected = calendarSelectedRange(config, mode, anchorDay, hoverDay);
-      const disabled = config.minDate && dateText < config.minDate;
+      const minDate = normalizeClientDateText(config.minDate);
+      const disabled = minDate && dateText < minDate;
       const isStart = selected && selected.start === day;
       const isEnd = selected && selected.end === day;
       const isRange = selected && day > selected.start && day < selected.end;
