@@ -6,9 +6,9 @@ function addDependency(payload) {
   payload = payload || {};
   return withLock_(function () {
     requireSchemaExists_();
-    const actor = requireCurrentMember_();
     const requestId = cleanString_(payload.requestId);
-    let rows = readAll_();
+    let rows = readNodeSnapshot_();
+    const actor = requireCurrentMember_(rows.members);
     let active = activeNodes_(rows.nodes);
     let nodesById = byId_(active, 'NodeId');
     const predecessorId = cleanString_(payload.predecessorId);
@@ -26,14 +26,14 @@ function addDependency(payload) {
       SuccessorNodeId: successorId
     });
 
-    rows = readAll_();
+    rows = readNodeSnapshot_();
     active = activeNodes_(rows.nodes);
     nodesById = byId_(active, 'NodeId');
     const writeMap = {};
     const rescheduleResult = rescheduleFromSeeds_([successorId], active, visibleDependencies_(rows.dependencies, nodesById), actor.MemberId, writeMap);
     writeObjects_(SHEET.NODES, Object.keys(writeMap).map(function (id) { return writeMap[id]; }));
 
-    rows = readAll_();
+    rows = readNodeSnapshot_();
     const writeIds = Object.keys(writeMap);
     const affectedIds = unique_(writeIds.concat(ancestorIdsForMany_(writeIds, activeNodes_(rows.nodes))));
     return makeMutationPayload_(rows, affectedIds, requestId, {
@@ -47,8 +47,8 @@ function deleteDependency(payload) {
   payload = payload || {};
   return withLock_(function () {
     requireSchemaExists_();
-    requireCurrentMember_();
-    const rows = readAll_();
+    const rows = readNodeSnapshot_();
+    requireCurrentMember_(rows.members);
     const dependencyId = cleanString_(payload.dependencyId);
     const dep = rows.dependencies.find(function (d) { return cleanString_(d.DependencyId) === dependencyId; });
     if (!dep) {
@@ -58,7 +58,7 @@ function deleteDependency(payload) {
     return {
       ok: true,
       requestId: cleanString_(payload.requestId),
-      dependencies: clientDependencies_(readAll_())
+      dependencies: clientDependencies_(readNodeSnapshot_())
     };
   });
 }
@@ -193,10 +193,42 @@ function validateDependency_(predecessorId, successorId, activeNodes, dependenci
   topoSortSubset_(Object.keys(nodesById), testDeps);
 }
 
+function validateDependencySet_(activeNodes, dependencies) {
+  const nodesById = byId_(activeNodes || [], 'NodeId');
+  const children = childrenMap_(activeNodes || []);
+  const visible = visibleDependencies_(dependencies || [], nodesById);
+  const pairs = {};
+  visible.forEach(function (dep) {
+    const predecessorId = cleanString_(dep.PredecessorNodeId);
+    const successorId = cleanString_(dep.SuccessorNodeId);
+    if (!predecessorId || !successorId || predecessorId === successorId) {
+      throw appError_('DEPENDENCY_INVALID', '復元後の依存関係に自己参照または空の端点があります。', false);
+    }
+    const pair = predecessorId + '>' + successorId;
+    if (pairs[pair]) {
+      throw appError_('DEPENDENCY_INVALID', '復元後の依存関係に重複があります。', false);
+    }
+    pairs[pair] = true;
+    if ((children[predecessorId] || []).length || (children[successorId] || []).length) {
+      throw appError_('DEPENDENCY_INVALID', '復元すると、親ノードを端点とする依存関係が有効になるため復元できません。', false);
+    }
+    if (!hasSchedule_(nodesById[predecessorId]) || !hasSchedule_(nodesById[successorId])) {
+      throw appError_('DEPENDENCY_INVALID', '復元すると、日付未設定ノードの依存関係が有効になるため復元できません。', false);
+    }
+  });
+  try {
+    topoSortSubset_(Object.keys(nodesById), visible);
+  } catch (error) {
+    throw appError_('DEPENDENCY_INVALID', '復元すると依存関係に循環が生じるため復元できません。', false);
+  }
+  return visible;
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     rescheduleFromSeeds_: rescheduleFromSeeds_,
     topoSortSubset_: topoSortSubset_,
-    validateDependency_: validateDependency_
+    validateDependency_: validateDependency_,
+    validateDependencySet_: validateDependencySet_
   };
 }

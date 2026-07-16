@@ -93,6 +93,7 @@
               <section class="drawer-section">
                 <div class="section-title">コメント</div>
                 <div class="comment-list">
+                  ${(state.commentPages.get(node.id) || {}).hasMore ? `<button class="button secondary compact" data-action="load-earlier-comments" data-node-id="${h(node.id)}" ${state.commentsLoading.has(node.id) ? 'disabled' : ''}>以前のコメントを読み込む</button>` : ''}
                   ${comments ? renderCommentThreads(comments) : '<div class="meta-line">読み込み中</div>'}
                   ${comments && !comments.length ? '<div class="meta-line">コメントなし</div>' : ''}
                   ${renderCommentComposer(node.id)}
@@ -419,6 +420,7 @@
                 ${renderColorPicker('status', 'color', draft.color, STATUS_COLOR_PRESETS)}
               </div>
               <label class="switch"><input type="checkbox" data-draft-scope="status" data-draft-field="isDoneColumn" ${checked(draft.isDoneColumn)}> 完了列にする</label>
+              <label class="switch"><input type="checkbox" data-draft-scope="status" data-draft-field="isInProgressColumn" ${checked(draft.isInProgressColumn)}> 親の自動集計で使う進行中列にする</label>
             </div>
             <footer class="modal-foot">
               ${draft.columnId ? `<button class="button destructive" type="button" data-action="confirm-status-delete" data-column-id="${h(draft.columnId)}" style="margin-right:auto">${icon('x')}列を削除</button>` : ''}
@@ -520,7 +522,7 @@
       const dialog = state.dialog;
       const draft = dialog.draft;
       const submitting = Boolean(dialog.submitting);
-      const tab = state.projectSettingsTab === 'meetings' ? 'meetings' : 'milestones';
+      const tab = normalizeProjectSettingsTab(state.projectSettingsTab);
       return `
         ${renderOverlay('close-dialog')}
         <div class="modal-shell">
@@ -533,10 +535,42 @@
               <div class="settings-tabs">
                 <button class="button tab ${tab === 'milestones' ? 'active' : ''}" type="button" data-action="project-settings-tab" data-tab="milestones">マイルストーン</button>
                 <button class="button tab ${tab === 'meetings' ? 'active' : ''}" type="button" data-action="project-settings-tab" data-tab="meetings">会議体</button>
+                <button class="button tab ${tab === 'slack' ? 'active' : ''}" type="button" data-action="project-settings-tab" data-tab="slack">Slack通知</button>
               </div>
-              ${tab === 'milestones' ? renderMilestoneSettings(draft, submitting) : renderMeetingSettings(draft, submitting)}
+              ${tab === 'milestones' ? renderMilestoneSettings(draft, submitting) : tab === 'meetings' ? renderMeetingSettings(draft, submitting) : renderSlackSettings(draft, submitting)}
             </div>
           </section>
+        </div>
+      `;
+    }
+
+    function renderSlackSettings(draft, submitting) {
+      const settings = state.slackSettings || {};
+      return `
+        <form id="projectSettingsForm" class="field-grid">
+          <label class="field wide">
+            <span class="field-label">Incoming Webhook URL</span>
+            <input class="input" type="password" autocomplete="off" data-draft-scope="projectSettings" data-draft-field="webhookUrl" value="${h(draft.webhookUrl || '')}" placeholder="${settings.configured ? h(settings.maskedWebhookUrl || '設定済み') : 'https://hooks.slack.com/services/...'}">
+            <span class="field-hint">保存後、URLはブラウザへ返しません</span>
+          </label>
+          <label class="field wide">
+            <span class="switch"><input type="checkbox" data-draft-scope="projectSettings" data-draft-field="statusChangeEnabled" ${checked(draft.statusChangeEnabled !== false)}> ステータス変更を通知</span>
+          </label>
+          <div class="inline-actions wide">
+            ${renderSubmitButton({ submitting, iconName: 'check', label: '設定を保存' })}
+            <button class="button secondary" type="button" data-action="test-slack" ${!settings.configured || submitting ? 'disabled' : ''}>接続テスト</button>
+            <button class="button destructive" type="button" data-action="disconnect-slack" ${!settings.configured || submitting ? 'disabled' : ''}>連携解除</button>
+          </div>
+        </form>
+        <div class="drawer-section">
+          <div class="section-title">接続状態</div>
+          <div class="meta-line">${settings.configured ? '設定済み' : '未設定'}${settings.lastResponseCode ? ` · HTTP ${Number(settings.lastResponseCode)}` : ''}</div>
+          ${settings.lastSuccessAt ? `<div class="meta-line">最終成功: ${h(formatDateTime(settings.lastSuccessAt))}</div>` : ''}
+          ${settings.lastErrorAt ? `<div class="meta-line">最終失敗: ${h(formatDateTime(settings.lastErrorAt))} · ${h(settings.lastError || '')}</div>` : ''}
+        </div>
+        <div class="drawer-section">
+          <div class="section-title">このブラウザの保存データ</div>
+          <button class="button secondary" type="button" data-action="clear-local-cache">ローカルキャッシュを削除</button>
         </div>
       `;
     }

@@ -6,14 +6,17 @@ function addNode(payload) {
   payload = payload || {};
   return withLock_(function () {
     requireSchemaExists_();
-    const actor = requireCurrentMember_();
-    const rows = readAll_();
+    const rows = readNodeSnapshot_();
+    const actor = requireCurrentMember_(rows.members);
     const active = activeNodes_(rows.nodes);
     const nodesById = byId_(active, 'NodeId');
     const parentId = cleanString_(payload.parentId);
     const parent = nodesById[parentId];
     if (!parent) {
       throw new Error('親ノードが見つかりません。');
+    }
+    if (cleanString_(parent.DraftOwner)) {
+      throw new Error('作成途中のタスクには子タスクを追加できません。先に名称を保存してください。');
     }
     if (nodeHasDependency_(parentId, rows.dependencies, nodesById)) {
       throw new Error('依存関係を持つ末端ノードには子タスクを追加できません。');
@@ -25,8 +28,16 @@ function addNode(payload) {
     }
 
     const requestedNodeId = cleanString_(payload.nodeId || payload.clientNodeId);
-    if (requestedNodeId && nodesById[requestedNodeId]) {
-      throw new Error('同じIDのノードが既に存在します。');
+    const existingRequestedNode = requestedNodeId && rows.nodes.find(function (item) {
+      return cleanString_(item.NodeId) === requestedNodeId;
+    });
+    if (existingRequestedNode) {
+      if (cleanString_(existingRequestedNode.DeletedAt)) {
+        throw new Error('同じIDの削除済みノードが既に存在します。');
+      }
+      const existingAffectedIds = unique_([requestedNodeId, cleanString_(existingRequestedNode.ParentId)]
+        .concat(ancestorIds_(requestedNodeId, active)));
+      return makeMutationPayload_(rows, existingAffectedIds, payload.requestId, { createdNodeId: requestedNodeId });
     }
     const nodeId = requestedNodeId || newId_();
     const now = nowIso_();
@@ -51,16 +62,18 @@ function addNode(payload) {
       Deliverable: cleanString_(payload.deliverable),
       Note: cleanString_(payload.note),
       Progress: '',
-      IncludeInWbs: true
+      IncludeInWbs: true,
+      DraftOwner: isShell ? actor.MemberId : '',
+      DraftExpiresAt: isShell ? new Date(Date.now() + DRAFT_TTL_MS).toISOString() : ''
     };
 
     appendObject_(SHEET.NODES, node);
-    let freshRows = readAll_();
+    let freshRows = readNodeSnapshot_();
     const rollupWriteMap = {};
     const rollupIds = rollupParentStatuses_(freshRows, [parentId], actor.MemberId, rollupWriteMap);
     if (rollupIds.length) {
       writeObjects_(SHEET.NODES, Object.keys(rollupWriteMap).map(function (id) { return rollupWriteMap[id]; }));
-      freshRows = readAll_();
+      freshRows = readNodeSnapshot_();
     }
     const affectedIds = unique_([nodeId, parentId].concat(rollupIds).concat(ancestorIdsForMany_([nodeId, parentId].concat(rollupIds), activeNodes_(freshRows.nodes))));
     return makeMutationPayload_(freshRows, affectedIds, payload.requestId, { createdNodeId: nodeId });
@@ -72,11 +85,11 @@ function saveNode(payload) {
   let statusNotification = null;
   const result = withLock_(function () {
     requireSchemaExists_();
-    const actor = requireCurrentMember_();
     const requestId = cleanString_(payload.requestId);
     const patch = payload.patch || {};
     const nodeId = cleanString_(payload.nodeId);
-    let rows = readAll_();
+    let rows = readNodeSnapshot_();
+    const actor = requireCurrentMember_(rows.members);
     let active = activeNodes_(rows.nodes);
     let nodesById = byId_(active, 'NodeId');
     const node = nodesById[nodeId];
@@ -126,7 +139,7 @@ function saveNode(payload) {
       doneColumnId: doneColumnId,
       actorId: actor.MemberId
     });
-    rows = readAll_();
+    rows = readNodeSnapshot_();
     const writeIds = Object.keys(writeMap);
     const affectedIds = unique_(writeIds.concat(ancestorIdsForMany_(writeIds, activeNodes_(rows.nodes))));
     if (statusChanged) {
@@ -159,9 +172,9 @@ function moveNode(payload) {
   payload = payload || {};
   return withLock_(function () {
     requireSchemaExists_();
-    const actor = requireCurrentMember_();
     const requestId = cleanString_(payload.requestId);
-    let rows = readAll_();
+    let rows = readNodeSnapshot_();
+    const actor = requireCurrentMember_(rows.members);
     const active = activeNodes_(rows.nodes);
     const nodesById = byId_(active, 'NodeId');
     const nodeId = cleanString_(payload.nodeId);
@@ -176,6 +189,9 @@ function moveNode(payload) {
     }
     if (nodeId === newParentId) {
       throw new Error('自分自身を親にはできません。');
+    }
+    if (cleanString_(newParent.DraftOwner)) {
+      throw new Error('作成途中のタスクを移動先にはできません。');
     }
     const descendants = collectDescendantIds_(nodeId, childrenMap_(active));
     if (descendants.indexOf(newParentId) !== -1) {
@@ -204,7 +220,7 @@ function moveNode(payload) {
     const rollupIds = rollupParentStatuses_(rows, [nodeId, oldParentId, newParentId], actor.MemberId, writeMap);
     writeObjects_(SHEET.NODES, Object.keys(writeMap).map(function (id) { return writeMap[id]; }));
 
-    rows = readAll_();
+    rows = readNodeSnapshot_();
     const affectedIds = unique_([nodeId, oldParentId, newParentId]
       .concat(rollupIds)
       .concat(ancestorIds_(oldParentId, activeNodes_(rows.nodes)))
@@ -217,8 +233,8 @@ function deleteNode(payload) {
   payload = payload || {};
   return withLock_(function () {
     requireSchemaExists_();
-    const actor = requireCurrentMember_();
-    const rows = readAll_();
+    const rows = readNodeSnapshot_();
+    const actor = requireCurrentMember_(rows.members);
     const active = activeNodes_(rows.nodes);
     const nodesById = byId_(active, 'NodeId');
     const nodeId = cleanString_(payload.nodeId);
@@ -229,7 +245,24 @@ function deleteNode(payload) {
     if (!node.ParentId) {
       throw new Error('ルートノードは削除できません。');
     }
+    if (payload.baseUpdatedAt !== undefined && cleanString_(payload.baseUpdatedAt) !== cleanString_(node.UpdatedAt)) {
+      return makeConflictPayload_(rows, nodeId, cleanString_(payload.requestId));
+    }
     const targetIds = [nodeId].concat(collectDescendantIds_(nodeId, childrenMap_(active)));
+    const expectedTargetIds = Array.isArray(payload.expectedTargetIds)
+      ? payload.expectedTargetIds.map(cleanString_).filter(Boolean).sort()
+      : [];
+    if (expectedTargetIds.length && expectedTargetIds.join(',') !== targetIds.slice().sort().join(',')) {
+      const affected = unique_(targetIds.concat(ancestorIds_(nodeId, active)));
+      return {
+        ok: false,
+        code: 'DELETE_SCOPE_CHANGED',
+        message: '確認後に対象サブツリーが変更されました。最新の件数を確認してから、もう一度削除してください。',
+        requestId: cleanString_(payload.requestId),
+        nodeId: nodeId,
+        nodes: clientNodes_(rows, affected)
+      };
+    }
     const now = nowIso_();
     const targets = targetIds.map(function (id) {
       const row = nodesById[id];
@@ -239,15 +272,11 @@ function deleteNode(payload) {
       row.UpdatedBy = actor.MemberId;
       return row;
     });
-    writeObjects_(SHEET.NODES, targets);
-
-    let freshRows = readAll_();
     const rollupWriteMap = {};
-    const rollupIds = rollupParentStatuses_(freshRows, [node.ParentId], actor.MemberId, rollupWriteMap);
-    if (rollupIds.length) {
-      writeObjects_(SHEET.NODES, Object.keys(rollupWriteMap).map(function (id) { return rollupWriteMap[id]; }));
-      freshRows = readAll_();
-    }
+    const rollupIds = rollupParentStatuses_(rows, [node.ParentId], actor.MemberId, rollupWriteMap);
+    writeObjects_(SHEET.NODES, targets.concat(Object.keys(rollupWriteMap).map(function (id) { return rollupWriteMap[id]; })));
+
+    const freshRows = readNodeSnapshot_();
     const affectedIds = unique_(ancestorIds_(node.ParentId, activeNodes_(freshRows.nodes)).concat([node.ParentId]).concat(rollupIds));
     return makeMutationPayload_(freshRows, affectedIds, cleanString_(payload.requestId), {
       deletedNodeIds: targetIds
@@ -259,9 +288,9 @@ function restoreNode(payload) {
   payload = payload || {};
   return withLock_(function () {
     requireSchemaExists_();
-    const actor = requireCurrentMember_();
     const requestId = cleanString_(payload.requestId);
-    let rows = readAll_();
+    let rows = readNodeSnapshot_();
+    const actor = requireCurrentMember_(rows.members);
     const nodesById = byId_(rows.nodes, 'NodeId');
     const nodeId = cleanString_(payload.nodeId);
     const node = nodesById[nodeId];
@@ -284,27 +313,51 @@ function restoreNode(payload) {
     });
     const targetIds = [nodeId].concat(descendantIds);
     const now = nowIso_();
+    const prospectiveRows = Object.assign({}, rows, {
+      nodes: rows.nodes.map(cloneRow_)
+    });
+    const prospectiveById = byId_(prospectiveRows.nodes, 'NodeId');
     const targets = targetIds.map(function (id) {
-      const row = nodesById[id];
+      const row = prospectiveById[id];
       row.DeletedAt = '';
       row.DeletedBy = '';
       row.UpdatedAt = now;
       row.UpdatedBy = actor.MemberId;
       return row;
     }).filter(Boolean);
-    writeObjects_(SHEET.NODES, targets);
-
-    rows = readAll_();
+    const prospectiveActive = activeNodes_(prospectiveRows.nodes);
+    const visibleDependencies = validateDependencySet_(prospectiveActive, prospectiveRows.dependencies);
+    const rescheduleWriteMap = {};
+    const rescheduleResult = rescheduleFromSeeds_(
+      targetIds,
+      prospectiveActive,
+      visibleDependencies,
+      actor.MemberId,
+      rescheduleWriteMap
+    );
+    Object.keys(rescheduleWriteMap).forEach(function (id) {
+      prospectiveById[id] = rescheduleWriteMap[id];
+      const index = prospectiveRows.nodes.findIndex(function (item) { return cleanString_(item.NodeId) === id; });
+      if (index >= 0) prospectiveRows.nodes[index] = rescheduleWriteMap[id];
+    });
     const rollupWriteMap = {};
-    const rollupIds = rollupParentStatuses_(rows, [nodeId, parentId], actor.MemberId, rollupWriteMap);
-    if (rollupIds.length) {
-      writeObjects_(SHEET.NODES, Object.keys(rollupWriteMap).map(function (id) { return rollupWriteMap[id]; }));
-      rows = readAll_();
-    }
+    const rollupIds = rollupParentStatuses_(prospectiveRows, [nodeId, parentId], actor.MemberId, rollupWriteMap);
+    const combinedWriteMap = {};
+    targets.forEach(function (row) { combinedWriteMap[cleanString_(row.NodeId)] = row; });
+    Object.keys(rescheduleWriteMap).forEach(function (id) { combinedWriteMap[id] = rescheduleWriteMap[id]; });
+    Object.keys(rollupWriteMap).forEach(function (id) { combinedWriteMap[id] = rollupWriteMap[id]; });
+    writeObjects_(SHEET.NODES, Object.keys(combinedWriteMap).map(function (id) { return combinedWriteMap[id]; }));
+
+    rows = readNodeSnapshot_();
     const active = activeNodes_(rows.nodes);
-    const affectedIds = unique_(targetIds.concat([parentId]).concat(rollupIds).concat(ancestorIds_(nodeId, active)));
+    const affectedIds = unique_(targetIds
+      .concat(rescheduleResult.shiftedIds)
+      .concat([parentId])
+      .concat(rollupIds)
+      .concat(ancestorIdsForMany_(targetIds.concat(rescheduleResult.shiftedIds), active)));
     return makeMutationPayload_(rows, affectedIds, requestId, {
-      restoredNodeIds: targetIds
+      restoredNodeIds: targetIds,
+      rescheduledCount: rescheduleResult.shiftedIds.length
     });
   });
 }
@@ -313,9 +366,9 @@ function fitNodeToChildren(payload) {
   payload = payload || {};
   return withLock_(function () {
     requireSchemaExists_();
-    const actor = requireCurrentMember_();
     const requestId = cleanString_(payload.requestId);
-    let rows = readAll_();
+    let rows = readNodeSnapshot_();
+    const actor = requireCurrentMember_(rows.members);
     const active = activeNodes_(rows.nodes);
     const nodesById = byId_(active, 'NodeId');
     const nodeId = cleanString_(payload.nodeId);
@@ -337,7 +390,7 @@ function fitNodeToChildren(payload) {
     node.UpdatedBy = actor.MemberId;
     writeObject_(SHEET.NODES, node);
 
-    rows = readAll_();
+    rows = readNodeSnapshot_();
     const affectedIds = unique_([nodeId].concat(ancestorIds_(nodeId, activeNodes_(rows.nodes))));
     return makeMutationPayload_(rows, affectedIds, requestId, {});
   });
@@ -363,6 +416,8 @@ function applyNodePatch_(node, patch, rows) {
 
   if (patch.name !== undefined) {
     node.Name = requireName_(patch.name);
+    node.DraftOwner = '';
+    node.DraftExpiresAt = '';
   }
   if (hasStatusPatch) {
     node.StatusColumnId = normalizedStatus;
@@ -420,7 +475,7 @@ function applyNodePatch_(node, patch, rows) {
 
 function rollupParentStatuses_(rows, seedIds, actorId, writeMap) {
   writeMap = writeMap || {};
-  const active = activeNodes_(rows.nodes);
+  const active = activeNodes_(rows.nodes).filter(function (node) { return !cleanString_(node.DraftOwner); });
   const nodesById = byId_(active, 'NodeId');
   const children = childrenMap_(active);
   const doneColumnId = doneStatusColumnId_(rows.statusColumns);
@@ -471,6 +526,15 @@ function rollupParentStatuses_(rows, seedIds, actorId, writeMap) {
 }
 
 function inProgressStatusColumnId_(statusColumns) {
+  const explicit = (statusColumns || []).filter(function (statusColumn) {
+    return isTrue_(statusColumn.IsInProgressColumn);
+  });
+  if (explicit.length > 1) {
+    throw appError_('STATUS_PROGRESS_INVARIANT', '進行中列の設定が複数あります。StatusColumnsを確認してください。', false);
+  }
+  if (explicit.length === 1) {
+    return cleanString_(explicit[0].ColumnId);
+  }
   const column = (statusColumns || []).find(function (statusColumn) {
     const name = cleanString_(statusColumn.Name).toLowerCase();
     return name === '進行中' || name.indexOf('進行中') !== -1 || name === 'doing' || name === 'in progress';
@@ -480,8 +544,9 @@ function inProgressStatusColumnId_(statusColumns) {
 
 function appendNodeActivityLogs_(nodeId, change) {
   const now = nowIso_();
+  const logs = [];
   if (change.statusChanged) {
-    appendObject_(SHEET.ACTIVITY_LOG, {
+    logs.push({
       LogId: newId_(),
       NodeId: nodeId,
       Field: 'status',
@@ -493,7 +558,7 @@ function appendNodeActivityLogs_(nodeId, change) {
     });
   }
   if (change.progressChanged) {
-    appendObject_(SHEET.ACTIVITY_LOG, {
+    logs.push({
       LogId: newId_(),
       NodeId: nodeId,
       Field: 'progress',
@@ -504,12 +569,58 @@ function appendNodeActivityLogs_(nodeId, change) {
       ChangedBy: change.actorId
     });
   }
+  appendObjects_(SHEET.ACTIVITY_LOG, logs);
+}
+
+function hasExpiredDraftNodes_(nodes, nowMs) {
+  const current = Number(nowMs) || Date.now();
+  return (nodes || []).some(function (node) {
+    if (cleanString_(node.DeletedAt) || !cleanString_(node.DraftOwner)) return false;
+    const expiresAt = Date.parse(cleanString_(node.DraftExpiresAt));
+    return Number.isFinite(expiresAt) && expiresAt <= current;
+  });
+}
+
+function cleanupExpiredDraftNodes_(rows, nowMs) {
+  const current = Number(nowMs) || Date.now();
+  const active = activeNodes_(rows.nodes || []);
+  const nodesById = byId_(active, 'NodeId');
+  const children = childrenMap_(active);
+  const expiredRoots = active.filter(function (node) {
+    if (!cleanString_(node.DraftOwner)) return false;
+    const expiresAt = Date.parse(cleanString_(node.DraftExpiresAt));
+    return Number.isFinite(expiresAt) && expiresAt <= current;
+  });
+  if (!expiredRoots.length) return [];
+
+  const targetIds = unique_(expiredRoots.reduce(function (ids, node) {
+    return ids.concat([cleanString_(node.NodeId)]).concat(collectDescendantIds_(cleanString_(node.NodeId), children));
+  }, []));
+  const timestamp = new Date(current).toISOString();
+  const targets = targetIds.map(function (id) {
+    const node = nodesById[id];
+    if (!node) return null;
+    const actorId = cleanString_(node.DraftOwner) || cleanString_(expiredRoots[0].DraftOwner);
+    node.DeletedAt = timestamp;
+    node.DeletedBy = actorId;
+    node.UpdatedAt = timestamp;
+    node.UpdatedBy = actorId;
+    return node;
+  }).filter(Boolean);
+  const parentIds = unique_(targets.map(function (node) { return cleanString_(node.ParentId); }));
+  const rollupWriteMap = {};
+  rollupParentStatuses_(rows, parentIds, cleanString_(expiredRoots[0].DraftOwner), rollupWriteMap);
+  writeObjects_(SHEET.NODES, targets.concat(Object.keys(rollupWriteMap).map(function (id) { return rollupWriteMap[id]; })));
+  return targetIds;
 }
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     rollupParentStatuses_: rollupParentStatuses_,
     inProgressStatusColumnId_: inProgressStatusColumnId_,
-    restoreNode: restoreNode
+    deleteNode: deleteNode,
+    restoreNode: restoreNode,
+    hasExpiredDraftNodes_: hasExpiredDraftNodes_,
+    cleanupExpiredDraftNodes_: cleanupExpiredDraftNodes_
   };
 }

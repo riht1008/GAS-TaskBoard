@@ -17,10 +17,11 @@ function makeFullPayload_(rows) {
     rootId: root ? root.NodeId : '',
     nodes: clientNodes_(rows, active.map(function (n) { return n.NodeId; })),
     members: rows.members.map(clientMember_),
-    statusColumns: rows.statusColumns.map(clientStatusColumn_).sort(compareSortOrder_),
+    statusColumns: clientStatusColumns_(rows.statusColumns),
     dependencies: clientDependencies_(rows),
     milestones: rows.milestones.map(clientMilestone_).sort(compareSortOrder_),
     meetings: rows.meetings.map(clientMeeting_).sort(compareSortOrder_),
+    slackSettings: publicSlackSettings_(),
     commentCounts: commentCounts_(rows),
     unregistered: !currentMember
   };
@@ -31,9 +32,11 @@ function makeMutationPayload_(rows, affectedIds, requestId, extra) {
   const payload = {
     ok: true,
     requestId: requestId || '',
-    nodes: clientNodes_(rows, affectedIds || []),
-    commentCounts: commentCounts_(rows)
+    nodes: clientNodes_(rows, affectedIds || [])
   };
+  if (sheetWasLoaded_(rows, SHEET.COMMENTS)) {
+    payload.commentCounts = commentCounts_(rows);
+  }
   Object.keys(extra).forEach(function (key) { payload[key] = extra[key]; });
   return payload;
 }
@@ -51,7 +54,7 @@ function makeConflictPayload_(rows, nodeId, requestId) {
 }
 
 function clientNodes_(rows, ids) {
-  const active = activeNodes_(rows.nodes);
+  const active = payloadVisibleNodes_(rows);
   const idSet = {};
   (ids || []).forEach(function (id) { if (id) idSet[id] = true; });
   const derived = computeDerived_(active, rows.statusColumns);
@@ -88,7 +91,10 @@ function clientNode_(node, derived) {
     displayStartDate: derived.displayStartDate || '',
     displayEndDate: derived.displayEndDate || '',
     hasChildren: !!derived.hasChildren,
-    isLeaf: !derived.hasChildren
+    isLeaf: !derived.hasChildren,
+    isDraft: !!cleanString_(node.DraftOwner),
+    draftOwner: cleanString_(node.DraftOwner),
+    draftExpiresAt: cleanString_(node.DraftExpiresAt)
   };
 }
 
@@ -108,12 +114,22 @@ function clientStatusColumn_(column) {
     name: cleanString_(column.Name),
     sortOrder: Number(column.SortOrder) || 0,
     isDoneColumn: isTrue_(column.IsDoneColumn),
+    isInProgressColumn: isTrue_(column.IsInProgressColumn),
     color: normalizeStatusColor_(column.Color, column.Name, isTrue_(column.IsDoneColumn))
   };
 }
 
+function clientStatusColumns_(columns) {
+  const inProgressColumnId = inProgressStatusColumnId_(columns || []);
+  return (columns || []).map(function (column) {
+    const result = clientStatusColumn_(column);
+    result.isInProgressColumn = cleanString_(column.ColumnId) === inProgressColumnId;
+    return result;
+  }).sort(compareSortOrder_);
+}
+
 function clientDependencies_(rows) {
-  const activeMap = byId_(activeNodes_(rows.nodes), 'NodeId');
+  const activeMap = byId_(payloadVisibleNodes_(rows), 'NodeId');
   return rows.dependencies
     .filter(function (dep) {
       return activeMap[cleanString_(dep.PredecessorNodeId)] && activeMap[cleanString_(dep.SuccessorNodeId)];
@@ -257,7 +273,7 @@ function descendantOwnScheduleBounds_(nodeId, activeNodes) {
 }
 
 function commentCounts_(rows) {
-  const activeMap = byId_(activeNodes_(rows.nodes), 'NodeId');
+  const activeMap = byId_(payloadVisibleNodes_(rows), 'NodeId');
   const counts = {};
   rows.comments.forEach(function (comment) {
     const nodeId = cleanString_(comment.NodeId);
@@ -266,4 +282,23 @@ function commentCounts_(rows) {
     }
   });
   return counts;
+}
+
+function payloadVisibleNodes_(rows) {
+  const active = activeNodes_(rows.nodes || []);
+  const currentEmail = getCurrentEmail_();
+  const currentMember = (rows.members || []).find(function (member) {
+    return normalizeEmail_(member.Email) === currentEmail;
+  });
+  const currentMemberId = currentMember ? cleanString_(currentMember.MemberId) : '';
+  return active.filter(function (node) {
+    const draftOwner = cleanString_(node.DraftOwner);
+    return !draftOwner || (currentMemberId && draftOwner === currentMemberId);
+  });
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    computeDerived_: computeDerived_
+  };
 }

@@ -23,7 +23,7 @@ global.Utilities = {
 };
 
 const require = createRequire(import.meta.url);
-const { normalizeCellValue_ } = require('../src/06_Sheets.js');
+const { normalizeCellValue_, classifyHeaders_ } = require('../src/06_Sheets.js');
 
 test('normalizeCellValue formats milestone Date objects as yyyy-mm-dd in script timezone', () => {
   const value = new Date('2026-07-14T15:00:00.000Z');
@@ -45,4 +45,22 @@ test('normalizeCellValue keeps timestamp Date objects as ISO strings', () => {
   const value = new Date('2026-07-14T15:00:00.000Z');
 
   assert.equal(normalizeCellValue_('Comments', 'Timestamp', value), '2026-07-14T15:00:00.000Z');
+});
+
+test('classifyHeaders allows only known trailing columns to be appended', () => {
+  assert.deepEqual(
+    classifyHeaders_(['NodeId', 'Name'], ['NodeId', 'Name', 'DraftOwner']),
+    { kind: 'append', existingLength: 2, column: 3 }
+  );
+});
+
+test('classifyHeaders rejects reordered or unexpected columns', () => {
+  assert.equal(
+    classifyHeaders_(['Name', 'NodeId'], ['NodeId', 'Name']).kind,
+    'mismatch'
+  );
+  assert.equal(
+    classifyHeaders_(['NodeId', 'Name', 'Unexpected'], ['NodeId', 'Name']).kind,
+    'mismatch'
+  );
 });

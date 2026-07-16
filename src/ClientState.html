@@ -3,6 +3,7 @@
       setupRequired: false,
       nodes: [],
       nodesById: new Map(),
+      childrenByParent: new Map(),
       members: [],
       memberById: new Map(),
       statusColumns: [],
@@ -27,6 +28,7 @@
       detailDraft: null,
       shellNodeId: '',
       shellBaseline: null,
+      recoveredDraftIds: new Set(),
       focusDetailName: false,
       creatingShell: false,
       dialog: null,
@@ -35,6 +37,7 @@
       openDropdown: '',
       calendarView: null,
       comments: new Map(),
+      commentPages: new Map(),
       commentsLoading: new Set(),
       commentDrafts: {},
       commentMentionIds: {},
@@ -58,22 +61,23 @@
       pendingMutationCount: 0,
       mutationGeneration: 0,
       saveChains: new Map(),
-      latestRequestByNode: new Map(),
+      pendingNodeMutations: new Map(),
       savingNodeIds: new Set(),
       requestCounter: 0,
       toasts: [],
       toastCounter: 0,
       syncStatus: 'idle',
       lastSyncAt: '',
-      syncTimer: null,
-      scrollToNodeId: ''
+      scrollToNodeId: '',
+      slackSettings: { configured: false, maskedWebhookUrl: '', statusChangeEnabled: true, lastSuccessAt: '', lastErrorAt: '', lastError: '', lastResponseCode: 0 },
+      renderCache: null
     };
 
     const app = document.getElementById('app');
     const toastRoot = document.getElementById('toastRoot');
     const LOCAL_CACHE_PREFIX = 'gasTaskManager.cache.v2';
     const LOCAL_CACHE_INDEX_KEY = 'gasTaskManager.cache.index.v2';
-    const SYNC_INTERVAL_MS = 30000;
+    const LOCAL_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
     const SERVER_CALL_TIMEOUT_MS = 60000;
     const GANTT_ROW_HEIGHT = 40;
     const GANTT_TREE_WIDTH_MIN = 360;
@@ -105,6 +109,8 @@
       return `<svg class="svg-icon ${h(extraClass)}" viewBox="0 0 24 24" aria-hidden="true">${paths}</svg>`;
     }
 
+    state.currentEmail = String(window.__TASKBOARD_BOOTSTRAP_EMAIL__ || '').trim().toLowerCase();
+
     let appInitStarted = false;
 
     function startAppOnce() {
@@ -123,6 +129,14 @@
       if (!hasPendingMutations()) return;
       event.preventDefault();
       event.returnValue = '';
+    });
+    window.addEventListener('focus', () => {
+      if ((state.lastSyncAt || state.nodes.length) && !state.setupRequired && !hasPendingMutations()) syncFromServer({ silent: true });
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && (state.lastSyncAt || state.nodes.length) && !state.setupRequired && !hasPendingMutations()) {
+        syncFromServer({ silent: true });
+      }
     });
     document.addEventListener('keydown', handleGlobalKeydown);
     document.addEventListener('click', event => {

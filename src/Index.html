@@ -17,6 +17,7 @@
   <div id="toastRoot" class="toast-stack" aria-live="polite"></div>
 
   <script>
+window.__TASKBOARD_BOOTSTRAP_EMAIL__ = <?!= JSON.stringify(bootstrapEmail || '') ?>;
 <?!= include('ClientState'); ?>
 <?!= include('ClientDataSync'); ?>
 <?!= include('ClientRenderViews'); ?>

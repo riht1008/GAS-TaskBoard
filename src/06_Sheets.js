@@ -4,16 +4,65 @@
 
 function readAll_(options) {
   options = options || {};
-  return {
-    nodes: readObjects_(SHEET.NODES),
-    members: readObjects_(SHEET.MEMBERS),
-    statusColumns: readObjects_(SHEET.STATUS_COLUMNS),
-    dependencies: readObjects_(SHEET.DEPENDENCIES),
-    comments: readObjects_(SHEET.COMMENTS),
-    activityLog: options.includeActivityLog ? readObjects_(SHEET.ACTIVITY_LOG) : [],
-    milestones: readObjects_(SHEET.MILESTONES),
-    meetings: readObjects_(SHEET.MEETINGS)
+  const selected = options.sheets ? options.sheets.reduce(function (map, sheetName) {
+    map[sheetName] = true;
+    return map;
+  }, {}) : null;
+  function shouldRead(sheetName) {
+    if (sheetName === SHEET.ACTIVITY_LOG && !options.includeActivityLog && !selected) {
+      return false;
+    }
+    return !selected || !!selected[sheetName];
+  }
+  const rows = {
+    nodes: shouldRead(SHEET.NODES) ? readObjects_(SHEET.NODES) : [],
+    members: shouldRead(SHEET.MEMBERS) ? readObjects_(SHEET.MEMBERS) : [],
+    statusColumns: shouldRead(SHEET.STATUS_COLUMNS) ? readObjects_(SHEET.STATUS_COLUMNS) : [],
+    dependencies: shouldRead(SHEET.DEPENDENCIES) ? readObjects_(SHEET.DEPENDENCIES) : [],
+    comments: shouldRead(SHEET.COMMENTS) ? readObjects_(SHEET.COMMENTS) : [],
+    activityLog: shouldRead(SHEET.ACTIVITY_LOG) ? readObjects_(SHEET.ACTIVITY_LOG) : [],
+    milestones: shouldRead(SHEET.MILESTONES) ? readObjects_(SHEET.MILESTONES) : [],
+    meetings: shouldRead(SHEET.MEETINGS) ? readObjects_(SHEET.MEETINGS) : []
   };
+  rows.__loadedSheets = {};
+  Object.keys(HEADERS).forEach(function (sheetName) {
+    rows.__loadedSheets[sheetName] = shouldRead(sheetName);
+  });
+  return rows;
+}
+
+function readNodeSnapshot_() {
+  return readAll_({
+    sheets: [SHEET.NODES, SHEET.MEMBERS, SHEET.STATUS_COLUMNS, SHEET.DEPENDENCIES]
+  });
+}
+
+function readCommentSnapshot_() {
+  return readAll_({
+    sheets: [SHEET.NODES, SHEET.MEMBERS, SHEET.COMMENTS]
+  });
+}
+
+function readStatusSnapshot_() {
+  return readAll_({
+    sheets: [SHEET.NODES, SHEET.MEMBERS, SHEET.STATUS_COLUMNS]
+  });
+}
+
+function readMemberSnapshot_() {
+  return readAll_({
+    sheets: [SHEET.NODES, SHEET.MEMBERS, SHEET.STATUS_COLUMNS]
+  });
+}
+
+function readProjectSettingsSnapshot_() {
+  return readAll_({
+    sheets: [SHEET.MEMBERS, SHEET.MILESTONES, SHEET.MEETINGS]
+  });
+}
+
+function sheetWasLoaded_(rows, sheetName) {
+  return !rows || !rows.__loadedSheets || rows.__loadedSheets[sheetName] === true;
 }
 
 function ensureSchema_() {
@@ -40,17 +89,59 @@ function ensureSheet_(sheetName) {
     initializeSheet_(sheetName, sheet, headers);
     return;
   }
-  const maxColumns = sheet.getMaxColumns();
-  if (maxColumns < headers.length) {
-    sheet.insertColumnsAfter(maxColumns, headers.length - maxColumns);
+  const readWidth = Math.max(headers.length, sheet.getLastColumn(), 1);
+  const currentHeaders = sheet.getRange(1, 1, 1, readWidth).getValues()[0].map(cleanString_);
+  const classification = classifyHeaders_(currentHeaders, headers);
+  if (classification.kind === 'empty') {
+    if (sheet.getLastRow() > 1) {
+      throw appError_('SCHEMA_MISMATCH', sheetName + ' シートのヘッダーが空ですが、データ行が存在します。自動修復を停止しました。', false);
+    }
     initializeSheet_(sheetName, sheet, headers);
     return;
   }
-  const currentHeaders = sheet.getRange(1, 1, 1, headers.length).getValues()[0].map(cleanString_);
-  const headersMatch = headers.every(function (header, index) { return currentHeaders[index] === header; });
-  if (!headersMatch) {
-    initializeSheet_(sheetName, sheet, headers);
+  if (classification.kind === 'mismatch') {
+    throw appError_(
+      'SCHEMA_MISMATCH',
+      sheetName + ' シートの列構成が想定と異なります（列 ' + classification.column + '）。データ列の誤解釈を防ぐため自動修復を停止しました。',
+      false
+    );
   }
+  if (classification.kind === 'exact') {
+    return;
+  }
+  if (sheet.getMaxColumns() < headers.length) {
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), headers.length - sheet.getMaxColumns());
+  }
+  if (classification.kind === 'append') {
+    const start = classification.existingLength + 1;
+    const missing = headers.slice(classification.existingLength);
+    sheet.getRange(1, start, 1, missing.length).setValues([missing]).setFontWeight('bold');
+  }
+  sheet.setFrozenRows(1);
+  applyTextFormats_(sheetName, sheet);
+}
+
+function classifyHeaders_(currentHeaders, expectedHeaders) {
+  const current = (currentHeaders || []).map(cleanString_);
+  while (current.length && !current[current.length - 1]) {
+    current.pop();
+  }
+  if (!current.length) {
+    return { kind: 'empty', existingLength: 0, column: 1 };
+  }
+  const compareLength = Math.min(current.length, expectedHeaders.length);
+  for (let index = 0; index < compareLength; index += 1) {
+    if (current[index] !== expectedHeaders[index]) {
+      return { kind: 'mismatch', existingLength: current.length, column: index + 1 };
+    }
+  }
+  if (current.length > expectedHeaders.length) {
+    return { kind: 'mismatch', existingLength: current.length, column: expectedHeaders.length + 1 };
+  }
+  if (current.length < expectedHeaders.length) {
+    return { kind: 'append', existingLength: current.length, column: current.length + 1 };
+  }
+  return { kind: 'exact', existingLength: current.length, column: 0 };
 }
 
 function initializeSheet_(sheetName, sheet, headers) {
@@ -76,6 +167,19 @@ function applyRowTextFormats_(sheetName, sheet, rowNumber, rowCount) {
 function readObjects_(sheetName) {
   const sheet = SpreadsheetApp.getActive().getSheetByName(sheetName);
   const headers = HEADERS[sheetName];
+  if (!sheet) {
+    throw appError_('SCHEMA_MISMATCH', sheetName + ' シートが見つかりません。', false);
+  }
+  const headerWidth = Math.max(headers.length, sheet.getLastColumn(), 1);
+  const currentHeaders = sheet.getRange(1, 1, 1, headerWidth).getValues()[0].map(cleanString_);
+  const classification = classifyHeaders_(currentHeaders, headers);
+  if (classification.kind !== 'exact') {
+    throw appError_(
+      'SCHEMA_MISMATCH',
+      sheetName + ' シートの列構成が想定と異なります。全体を再読み込みし、解消しない場合はシートの列順を確認してください。',
+      false
+    );
+  }
   const lastRow = sheet.getLastRow();
   if (lastRow <= 1) {
     return [];
@@ -101,7 +205,7 @@ function normalizeCellValue_(sheetName, header, value) {
     return normalizeDateOnlyCell_(value);
   }
   if (value instanceof Date) {
-    if (header === 'CreatedAt' || header === 'UpdatedAt' || header === 'DeletedAt' || header === 'Timestamp') {
+    if (header === 'CreatedAt' || header === 'UpdatedAt' || header === 'DeletedAt' || header === 'Timestamp' || header === 'DraftExpiresAt') {
       return value.toISOString();
     }
   }
@@ -177,14 +281,27 @@ function spreadsheetTimeZone_() {
 }
 
 function appendObject_(sheetName, obj) {
+  return appendObjects_(sheetName, [obj])[0];
+}
+
+function appendObjects_(sheetName, objects) {
   const sheet = SpreadsheetApp.getActive().getSheetByName(sheetName);
   const headers = HEADERS[sheetName];
-  const rowNumber = sheet.getLastRow() + 1;
-  if (rowNumber > sheet.getMaxRows()) {
-    sheet.insertRowsAfter(sheet.getMaxRows(), rowNumber - sheet.getMaxRows());
+  const source = (objects || []).filter(Boolean);
+  if (!source.length) {
+    return [];
   }
-  applyRowTextFormats_(sheetName, sheet, rowNumber, 1);
-  sheet.getRange(rowNumber, 1, 1, headers.length).setValues([headers.map(function (h) { return sheetValue_(obj[h]); })]);
+  const rowNumber = sheet.getLastRow() + 1;
+  const lastRowNumber = rowNumber + source.length - 1;
+  if (lastRowNumber > sheet.getMaxRows()) {
+    sheet.insertRowsAfter(sheet.getMaxRows(), lastRowNumber - sheet.getMaxRows());
+  }
+  applyRowTextFormats_(sheetName, sheet, rowNumber, source.length);
+  sheet.getRange(rowNumber, 1, source.length, headers.length).setValues(source.map(function (obj) {
+    return headers.map(function (h) { return sheetValue_(obj[h]); });
+  }));
+  source.forEach(function (obj, index) { obj.__row = rowNumber + index; });
+  return source;
 }
 
 function writeObject_(sheetName, obj) {
@@ -198,11 +315,29 @@ function writeObject_(sheetName, obj) {
 }
 
 function writeObjects_(sheetName, rows) {
+  const sheet = SpreadsheetApp.getActive().getSheetByName(sheetName);
+  const headers = HEADERS[sheetName];
+  const byRow = {};
   (rows || []).forEach(function (row) {
     if (row && row.__row) {
-      writeObject_(sheetName, row);
+      byRow[Number(row.__row)] = row;
     }
   });
+  const ordered = Object.keys(byRow).map(Number).sort(function (a, b) { return a - b; });
+  if (!ordered.length) {
+    return;
+  }
+  const start = ordered[0];
+  const end = ordered[ordered.length - 1];
+  const rowCount = end - start + 1;
+  const range = sheet.getRange(start, 1, rowCount, headers.length);
+  const values = range.getValues();
+  ordered.forEach(function (rowNumber) {
+    const row = byRow[rowNumber];
+    values[rowNumber - start] = headers.map(function (header) { return sheetValue_(row[header]); });
+  });
+  applyRowTextFormats_(sheetName, sheet, start, rowCount);
+  range.setValues(values);
 }
 
 function deleteRow_(sheetName, rowNumber) {
@@ -212,6 +347,7 @@ function deleteRow_(sheetName, rowNumber) {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     normalizeCellValue_: normalizeCellValue_,
-    normalizeDateOnlyCell_: normalizeDateOnlyCell_
+    normalizeDateOnlyCell_: normalizeDateOnlyCell_,
+    classifyHeaders_: classifyHeaders_
   };
 }

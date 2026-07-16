@@ -274,11 +274,13 @@
     }
 
     function doneStatusColumnId() {
-      const done = state.statusColumns.find(column => column.isDoneColumn) || state.statusColumns[0] || {};
-      return done.id || '';
+      const done = state.statusColumns.filter(column => column.isDoneColumn);
+      return done.length === 1 ? done[0].id : '';
     }
 
     function inProgressStatusColumnId() {
+      const explicit = state.statusColumns.filter(item => item.isInProgressColumn);
+      if (explicit.length === 1) return explicit[0].id;
       const column = state.statusColumns.find(item => {
         const name = String(item.name || '').trim().toLowerCase();
         return name === '進行中' || name.includes('進行中') || name === 'doing' || name === 'in progress';
@@ -290,7 +292,12 @@
       if (!node || !patch) return;
       const previousStatus = node.statusColumnId;
       const isLeaf = !node.hasChildren;
-      if (patch.name !== undefined) node.name = patch.name;
+      if (patch.name !== undefined) {
+        node.name = patch.name;
+        node.isDraft = false;
+        node.draftOwner = '';
+        node.draftExpiresAt = '';
+      }
       if (patch.statusColumnId !== undefined) node.statusColumnId = patch.statusColumnId;
       if (patch.priority !== undefined) node.priority = patch.priority;
       if (patch.assigneeIds !== undefined) node.assigneeIds = (patch.assigneeIds || []).slice();
@@ -716,7 +723,7 @@
     }
 
     function canCreateChild(node) {
-      return !!node && !nodeHasDependency(node.id);
+      return !!node && !node.isDraft && !nodeHasDependency(node.id);
     }
 
     function hasWbsExcludedAncestor(nodeId) {
@@ -762,7 +769,7 @@
       if (state.syncStatus === 'syncing') return '同期中';
       if (state.syncStatus === 'error') return '同期エラー';
       if (state.syncStatus === 'local') return 'ローカル表示';
-      if (state.syncStatus === 'pending') return 'ローカル保存済み';
+      if (state.syncStatus === 'pending') return 'スプレッドシートへ保存待ち';
       if (!state.lastSyncAt) return '同期待ち';
       const date = new Date(state.lastSyncAt);
       if (Number.isNaN(date.getTime())) return '同期済み';

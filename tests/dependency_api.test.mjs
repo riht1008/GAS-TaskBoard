@@ -28,9 +28,10 @@ global.dayToDate_ = day => {
 global.shiftDate_ = (dateText, deltaDays) => global.dayToDate_(global.dateToDay_(dateText) + deltaDays);
 global.cloneRow_ = row => Object.assign({}, row);
 global.nowIso_ = () => '2026-07-05T00:00:00.000Z';
+global.appError_ = (_code, message) => new Error(message);
 
 const require = createRequire(import.meta.url);
-const { rescheduleFromSeeds_, topoSortSubset_, validateDependency_ } = require('../src/04_DependencyApi.js');
+const { rescheduleFromSeeds_, topoSortSubset_, validateDependency_, validateDependencySet_ } = require('../src/04_DependencyApi.js');
 
 function node(id, start, end) {
   return {
@@ -127,5 +128,24 @@ test('validateDependency rejects duplicate dependencies', () => {
   assert.throws(
     () => validateDependency_('p', 's', nodes, [dep('p', 's')]),
     /既に存在/
+  );
+});
+
+test('validateDependencySet rejects dependencies that become parent endpoints after restore', () => {
+  const nodes = rowsWithParentDependencyTarget();
+  assert.throws(
+    () => validateDependencySet_(nodes, [dep('parent', 'successor')]),
+    /親ノード/
+  );
+});
+
+test('validateDependencySet rejects a cycle exposed by restored nodes', () => {
+  const nodes = [
+    node('a', '2026-07-01', '2026-07-02'),
+    node('b', '2026-07-02', '2026-07-03')
+  ];
+  assert.throws(
+    () => validateDependencySet_(nodes, [dep('a', 'b'), dep('b', 'a')]),
+    /循環/
   );
 });

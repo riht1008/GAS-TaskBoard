@@ -6,7 +6,8 @@
     function matchesFilters(node) {
       const query = state.filters.query.trim().toLowerCase();
       if (query) {
-        const text = [node.name, node.description].join(' ').toLowerCase();
+        const assignees = (node.assigneeIds || []).map(id => (state.memberById.get(id) || {}).name || '');
+        const text = [node.name, node.description, node.deliverable, node.note, statusName(node.statusColumnId)].concat(assignees).join(' ').toLowerCase();
         if (!text.includes(query)) return false;
       }
       if (state.filters.parentId && node.id !== state.filters.parentId && !isDescendantOf(node.id, state.filters.parentId)) return false;
@@ -21,6 +22,9 @@
     }
 
     function visibleTreeNodes() {
+      if (state.renderCache && state.renderCache.visibleTreeNodes) {
+        return state.renderCache.visibleTreeNodes;
+      }
       const roots = state.nodes.filter(node => !node.parentId).sort(compareNodeForList);
       const matching = new Set(state.nodes.filter(matchesFilters).map(node => node.id));
       const includeSet = new Set(matching);
@@ -37,6 +41,7 @@
         childrenOf(node.id).sort(compareNodeForList).forEach(visit);
       }
       roots.forEach(visit);
+      if (state.renderCache) state.renderCache.visibleTreeNodes = rows;
       return rows;
     }
 
@@ -51,7 +56,7 @@
     }
 
     function childrenOf(parentId) {
-      return state.nodes.filter(node => node.parentId === parentId).sort(compareNodeOrder);
+      return (state.childrenByParent.get(parentId || '') || []).slice().sort(compareNodeOrder);
     }
 
     function collectDescendants(nodeId) {

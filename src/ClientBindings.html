@@ -497,6 +497,12 @@
         render();
         return;
       }
+      if (action === 'filter-self') {
+        const memberId = state.currentMember ? state.currentMember.id : '';
+        state.filters.assigneeId = state.filters.assigneeId === memberId ? '' : memberId;
+        render();
+        return;
+      }
       if (action === 'toggle-member-rail') {
         state.kanbanMemberRailCollapsed = !state.kanbanMemberRailCollapsed;
         render();
@@ -515,6 +521,9 @@
       if (action === 'project-settings-tab') return switchProjectSettingsTab(event.currentTarget.dataset.tab);
       if (action === 'save-project-setting') return saveProjectSettingsDraft();
       if (action === 'clear-project-setting') return clearProjectSettingsDraft();
+      if (action === 'test-slack') return testSlackSettingsConnection();
+      if (action === 'disconnect-slack') return disconnectSlackSettings();
+      if (action === 'clear-local-cache') return clearLocalCache();
       if (action === 'edit-milestone') return editMilestoneDraft(event.currentTarget.dataset.milestoneId);
       if (action === 'edit-meeting') return editMeetingDraft(event.currentTarget.dataset.meetingId);
       if (action === 'confirm-milestone-delete') return confirmMilestoneDelete(event.currentTarget.dataset.milestoneId);
@@ -537,6 +546,7 @@
       if (action === 'delete-node') return deleteNodeConfirmed();
       if (action === 'delete-status') return deleteStatusConfirmed();
       if (action === 'post-comment') return postComment();
+      if (action === 'load-earlier-comments') return loadEarlierComments(event.currentTarget.dataset.nodeId);
       if (action === 'reply-comment') return replyToComment(event.currentTarget.dataset.commentId, event.currentTarget.dataset.commentAuthor);
       if (action === 'cancel-comment-reply') return cancelCommentReply();
       if (action === 'select-mention') return selectMention(event.currentTarget.dataset.memberId);
@@ -844,6 +854,7 @@
     }
 
     function handleGlobalKeydown(event) {
+      if (event.key === 'Tab' && trapModalFocus_(event)) return;
       if (event.key !== 'Escape') return;
       if (state.ganttCreateDrag) return;
       if (state.openDropdown) {
@@ -857,6 +868,36 @@
         return;
       }
       if (state.drawerNodeId) closeDrawer();
+    }
+
+    function trapModalFocus_(event) {
+      const root = state.dialog
+        ? document.getElementById('dialogRoot')
+        : state.drawerNodeId
+          ? document.getElementById('drawerRoot')
+          : null;
+      const surface = root && root.querySelector('.modal, .drawer');
+      if (!surface) return false;
+      const focusable = Array.from(surface.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'))
+        .filter(element => !element.hidden && element.getAttribute('aria-hidden') !== 'true');
+      if (!focusable.length) {
+        event.preventDefault();
+        surface.focus();
+        return true;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && (document.activeElement === first || !surface.contains(document.activeElement))) {
+        event.preventDefault();
+        last.focus();
+        return true;
+      }
+      if (!event.shiftKey && (document.activeElement === last || !surface.contains(document.activeElement))) {
+        event.preventDefault();
+        first.focus();
+        return true;
+      }
+      return false;
     }
 
     function handleDropdownOptionKeydown(event) {
