@@ -546,11 +546,14 @@
 
     function renderSlackSettings(draft, submitting) {
       const settings = state.slackSettings || {};
+      // GAS HtmlService can treat a literal protocol separator in an injected
+      // script fragment as a line comment while evaluating Index.html.
+      const webhookPlaceholder = ['https:', '', 'hooks.slack.com/services/...'].join('/');
       return `
         <form id="projectSettingsForm" class="field-grid">
           <label class="field wide">
             <span class="field-label">Incoming Webhook URL</span>
-            <input class="input" type="password" autocomplete="off" data-draft-scope="projectSettings" data-draft-field="webhookUrl" value="${h(draft.webhookUrl || '')}" placeholder="${settings.configured ? h(settings.maskedWebhookUrl || '設定済み') : 'https://hooks.slack.com/services/...'}">
+            <input class="input" type="password" autocomplete="off" data-draft-scope="projectSettings" data-draft-field="webhookUrl" value="${h(draft.webhookUrl || '')}" placeholder="${settings.configured ? h(settings.maskedWebhookUrl || '設定済み') : webhookPlaceholder}">
             <span class="field-hint">保存後、URLはブラウザへ返しません</span>
           </label>
           <label class="field wide">

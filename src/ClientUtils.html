@@ -663,7 +663,10 @@
     function safeMarkdownHref(value) {
       const href = String(value || '').split('&amp;').join('&').trim();
       const lowerHref = href.toLowerCase();
-      if (!lowerHref.startsWith('http://') && !lowerHref.startsWith('https://')) return '';
+      // Avoid literal protocol separators in injected client fragments because
+      // GAS HtmlService can truncate the remainder as a JavaScript line comment.
+      const protocolSeparator = String.fromCharCode(47, 47);
+      if (!lowerHref.startsWith('http:' + protocolSeparator) && !lowerHref.startsWith('https:' + protocolSeparator)) return '';
       try {
         const url = new URL(href);
         return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : '';
