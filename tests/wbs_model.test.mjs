@@ -53,6 +53,30 @@ test('WBS numbering skips IncludeInWbs=false subtrees', () => {
   ]);
 });
 
+test('WBS excludes unfinished draft nodes and their dates', () => {
+  const rows = baseRows();
+  rows.nodes.push({
+    NodeId: 'draft',
+    ParentId: 'root',
+    Name: '',
+    StatusColumnId: 'todo',
+    SortOrder: 4000,
+    StartDate: '2027-12-01',
+    EndDate: '2027-12-31',
+    DraftOwner: 'm1'
+  });
+
+  const model = buildWbsModel_(rows, {
+    actorName: '佐藤',
+    now: '2026-07-03T00:00:00.000Z',
+    createdAt: '2026-07-03T00:00:00.000Z',
+    version: 1
+  });
+
+  assert.equal(model.taskRows.some(row => row.node.NodeId === 'draft'), false);
+  assert.equal(model.dateColumns.some(column => column.date.startsWith('2027-12')), false);
+});
+
 test('template layout keeps management columns fixed and places deep task names', () => {
   const model = buildWbsModel_(baseRows(), {
     actorName: '佐藤',

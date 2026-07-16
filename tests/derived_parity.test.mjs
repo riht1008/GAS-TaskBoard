@@ -36,6 +36,14 @@ function clientRecomputeSource() {
   return source.slice(start);
 }
 
+function clientRollupSource() {
+  const source = fs.readFileSync(new URL('../src/ClientUtils.html', import.meta.url), 'utf8');
+  const start = source.indexOf('    function rollupLocalParentStatuses(');
+  const end = source.indexOf('    function priorityLabel(', start);
+  if (start < 0 || end < 0) throw new Error('client rollup function not found');
+  return source.slice(start, end);
+}
+
 test('server and client derived progress and rollup bounds stay equivalent', () => {
   const serverNodes = [
     { NodeId: 'root', ParentId: '', StatusColumnId: 'todo', Progress: '', StartDate: '', EndDate: '' },
@@ -81,4 +89,26 @@ test('server and client derived progress and rollup bounds stay equivalent', () 
       displayEndDate: node.displayEndDate
     }, expected[node.id]);
   });
+});
+
+test('client parent status rollup ignores unfinished draft children', () => {
+  const state = {
+    nodes: [
+      { id: 'parent', parentId: '', statusColumnId: 'done' },
+      { id: 'real', parentId: 'parent', statusColumnId: 'done' },
+      { id: 'draft', parentId: 'parent', statusColumnId: 'todo', isDraft: true }
+    ]
+  };
+  const context = vm.createContext({
+    state,
+    Map,
+    Set,
+    doneStatusColumnId: () => 'done',
+    inProgressStatusColumnId: () => 'doing'
+  });
+  vm.runInContext(clientRollupSource(), context);
+
+  context.rollupLocalParentStatuses(['draft']);
+
+  assert.equal(state.nodes.find(node => node.id === 'parent').statusColumnId, 'done');
 });

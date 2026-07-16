@@ -184,12 +184,6 @@ function defaultStatusColor_(name, isDoneColumn) {
   return '#DDE3DF';
 }
 
-function ensureExactlyOneDone_(columns) {
-  // Backward-compatible name for older internal callers. Never repair the
-  // invariant silently: doing so would hide sheet corruption from operators.
-  return assertExactlyOneDone_(columns);
-}
-
 function assertExactlyOneDone_(columns) {
   const done = (columns || []).filter(function (column) { return isTrue_(column.IsDoneColumn); });
   if (done.length !== 1) {

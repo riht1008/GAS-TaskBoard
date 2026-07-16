@@ -10,8 +10,8 @@ function upsertMilestone(payload) {
   payload = payload || {};
   return withLock_(function () {
     requireSchemaExists_();
-    requireCurrentMember_();
     const rows = readProjectSettingsSnapshot_();
+    requireCurrentMember_(rows.members);
     const milestoneId = cleanString_(payload.milestoneId);
     const name = requireName_(payload.name);
     const date = cleanString_(payload.date);
@@ -55,8 +55,8 @@ function deleteMilestone(payload) {
   payload = payload || {};
   return withLock_(function () {
     requireSchemaExists_();
-    requireCurrentMember_();
     const rows = readProjectSettingsSnapshot_();
+    requireCurrentMember_(rows.members);
     const milestoneId = cleanString_(payload.milestoneId);
     const milestone = rows.milestones.find(function (item) { return cleanString_(item.MilestoneId) === milestoneId; });
     if (!milestone) {
@@ -71,8 +71,8 @@ function upsertMeeting(payload) {
   payload = payload || {};
   return withLock_(function () {
     requireSchemaExists_();
-    requireCurrentMember_();
     const rows = readProjectSettingsSnapshot_();
+    requireCurrentMember_(rows.members);
     const meetingId = cleanString_(payload.meetingId);
     const name = requireName_(payload.name);
     const scheduleRule = normalizeMeetingScheduleRulePayload_(payload);
@@ -120,8 +120,8 @@ function deleteMeeting(payload) {
   payload = payload || {};
   return withLock_(function () {
     requireSchemaExists_();
-    requireCurrentMember_();
     const rows = readProjectSettingsSnapshot_();
+    requireCurrentMember_(rows.members);
     const meetingId = cleanString_(payload.meetingId);
     const meeting = rows.meetings.find(function (item) { return cleanString_(item.MeetingId) === meetingId; });
     if (!meeting) {
@@ -307,7 +307,10 @@ function releaseWbsExportGuard_(token) {
 function buildWbsModel_(rows, options) {
   rows = rows || {};
   options = options || {};
-  const nodes = (rows.nodes || []).filter(function (node) { return !wbsClean_(wbsGet_(node, 'DeletedAt', 'deletedAt')); });
+  const nodes = (rows.nodes || []).filter(function (node) {
+    return !wbsClean_(wbsGet_(node, 'DeletedAt', 'deletedAt')) &&
+      !wbsClean_(wbsGet_(node, 'DraftOwner', 'draftOwner'));
+  });
   const members = rows.members || [];
   const statusColumns = rows.statusColumns || [];
   const milestones = (rows.milestones || []).slice().sort(wbsCompareSort_);

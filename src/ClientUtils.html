@@ -329,6 +329,7 @@
       const nodesById = new Map(state.nodes.map(item => [item.id, item]));
       const children = new Map();
       state.nodes.forEach(item => {
+        if (item.isDraft) return;
         const parentId = item.parentId || '';
         if (!children.has(parentId)) children.set(parentId, []);
         children.get(parentId).push(item.id);

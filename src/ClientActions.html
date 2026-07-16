@@ -153,9 +153,13 @@
         startDate: node.startDate,
         endDate: node.endDate
       }), () => {
-        state.nodes.push(node);
-        state.collapsed.delete(node.parentId);
-        rollupLocalParentStatuses([node.id, node.parentId]);
+        let target = state.nodesById.get(nodeId);
+        if (!target) {
+          state.nodes.push(node);
+          target = node;
+        }
+        state.collapsed.delete(target.parentId);
+        rollupLocalParentStatuses([target.id, target.parentId]);
       }, {
         rollback: () => {
           state.nodes = state.nodes.filter(item => item.id !== nodeId);
@@ -541,20 +545,20 @@
       });
     }
 
-    async function testSlackSettingsConnection() {
+    function testSlackSettingsConnection() {
       if (!state.dialog || state.dialog.type !== 'projectSettings') return;
       state.dialog.submitting = true;
       render();
-      try {
-        const result = await serverCall('testSlackConnection');
-        if (result.slackSettings) state.slackSettings = Object.assign({}, state.slackSettings, result.slackSettings);
-        showToast(result.message || (result.ok ? 'Slackへテスト通知を送信しました' : 'Slack接続テストに失敗しました'), result.ok ? 'success' : 'error', result.ok ? {} : { sticky: true });
-      } catch (error) {
-        showToast(error.message, 'error', { sticky: true });
-      } finally {
-        if (state.dialog) state.dialog.submitting = false;
-        render();
-      }
+      return queueBackgroundMutation('slack-settings', 'testSlackConnection', {}, null, null, {
+        onResult: result => {
+          if (result && result.ok) {
+            showToast(result.message || 'Slackへテスト通知を送信しました', 'success');
+          }
+        },
+        onFinally: () => {
+          if (state.dialog && state.dialog.type === 'projectSettings') state.dialog.submitting = false;
+        }
+      });
     }
 
     function disconnectSlackSettings() {
@@ -817,13 +821,17 @@
         endDate: node.endDate
       }), () => {
         state.creatingShell = false;
-        state.nodes.push(node);
+        let target = state.nodesById.get(nodeId);
+        if (!target) {
+          state.nodes.push(node);
+          target = node;
+        }
         state.collapsed.delete(parentId);
-        rollupLocalParentStatuses([node.id, parentId]);
+        rollupLocalParentStatuses([target.id, parentId]);
         state.drawerNodeId = nodeId;
-        initializeDetailDraft(node);
+        initializeDetailDraft(target);
         state.shellNodeId = nodeId;
-        state.shellBaseline = detailSnapshotFromNode(node);
+        state.shellBaseline = detailSnapshotFromNode(target);
         state.focusDetailName = true;
         state.scrollToNodeId = nodeId;
       }, {
@@ -1045,17 +1053,17 @@
         closeDrawer({ skipShellCleanup: true });
       }
       return saveNodePatch(node.id, patch, () => {
-        applyLocalNodePatch(node, patch);
+        const target = state.nodesById.get(node.id);
+        if (target) applyLocalNodePatch(target, patch);
       }, {
         baseUpdatedAt: wasShell ? undefined : draft.baseUpdatedAt,
         skipBaseUpdatedAt: wasShell,
-        onSuccess: result => {
-          if (result && result.ok === false) {
-            if (result.code === 'CONFLICT' && conflictDraft) {
-              reopenDetailDraftAfterConflict(node.id, conflictDraft);
-            }
-            return;
+        onResult: result => {
+          if (result && result.ok === false && result.code === 'CONFLICT' && conflictDraft) {
+            reopenDetailDraftAfterConflict(node.id, conflictDraft);
           }
+        },
+        onSuccess: () => {
           if (options.createNext) {
             createChildShell(parentId);
             return;
@@ -1130,10 +1138,12 @@
         nodeId,
         baseUpdatedAt: currentUpdatedAt(nodeId)
       }), () => {
-        node.startDate = startDate;
-        node.endDate = endDate;
-        node.displayStartDate = startDate;
-        node.displayEndDate = endDate;
+        const target = state.nodesById.get(nodeId);
+        if (!target) return;
+        target.startDate = startDate;
+        target.endDate = endDate;
+        target.displayStartDate = startDate;
+        target.displayEndDate = endDate;
       });
     }
 
@@ -1276,14 +1286,18 @@
       state.savingNodeIds.add(nodeId);
       rebuildIndexes();
       render();
-      const previous = state.saveChains.get(nodeId) || Promise.resolve();
+      const previous = state.nodeMutationChain || Promise.resolve();
       const chain = previous.catch(() => {}).then(async () => {
         const payload = payloadFactory();
         payload.requestId = requestId;
         const result = await serverCallWithRetry(apiName, [payload]);
         removePendingNodeMutation_(nodeId, requestId);
+        if (result && result.ok === false && options.rollback) {
+          options.rollback(before, result);
+          rebuildIndexes();
+        }
         const applied = applyMutationResult(result);
-        reapplyPendingNodeMutations_(nodeId);
+        if (options.onResult) options.onResult(result);
         if (applied && options.onSuccess) options.onSuccess(result);
         return result;
       }).catch(error => {
@@ -1293,7 +1307,7 @@
         } else if (before) {
           mergeRollbackSnapshot_(Array.isArray(before) ? before : [before]);
         }
-        reapplyPendingNodeMutations_(nodeId);
+        reapplyPendingNodeMutations_((Array.isArray(before) ? before : [before]).filter(Boolean).map(node => node.id).concat([nodeId]));
         rebuildIndexes();
         state.syncStatus = 'error';
         persistLocalCache();
@@ -1301,14 +1315,15 @@
         if (options.onError) options.onError(error);
         render();
       }).finally(() => {
-        if (state.saveChains.get(nodeId) === chain) state.savingNodeIds.delete(nodeId);
+        if (!(state.pendingNodeMutations.get(nodeId) || []).length) state.savingNodeIds.delete(nodeId);
+        if (state.nodeMutationChain === chain) state.nodeMutationChain = null;
         if (!state.savingNodeIds.size && !state.pendingMutationCount && state.syncStatus === 'pending') {
           state.syncStatus = 'synced';
           state.lastSyncAt = new Date().toISOString();
         }
         render();
       });
-      state.saveChains.set(nodeId, chain);
+      state.nodeMutationChain = chain;
       return chain;
     }
 
@@ -1319,14 +1334,16 @@
       else state.pendingNodeMutations.delete(nodeId);
     }
 
-    function reapplyPendingNodeMutations_(nodeId) {
-      (state.pendingNodeMutations.get(nodeId) || []).forEach(entry => {
-        if (entry.reapply) entry.reapply();
+    function reapplyPendingNodeMutations_(nodeIds) {
+      const ids = Array.from(new Set((Array.isArray(nodeIds) ? nodeIds : [nodeIds]).filter(Boolean)));
+      ids.forEach(nodeId => {
+        (state.pendingNodeMutations.get(nodeId) || []).forEach(entry => {
+          if (entry.reapply) entry.reapply();
+        });
       });
-      rebuildIndexes();
-      state.syncStatus = 'pending';
-      persistLocalCache();
-      render();
+      if (ids.some(nodeId => (state.pendingNodeMutations.get(nodeId) || []).length)) {
+        state.syncStatus = 'pending';
+      }
     }
 
     function mergeRollbackSnapshot_(nodes) {
@@ -1608,7 +1625,8 @@
         return;
       }
       saveNodePatch(nodeId, patch, () => {
-        applyLocalNodePatch(node, patch);
+        const target = state.nodesById.get(nodeId);
+        if (target) applyLocalNodePatch(target, patch);
       });
     }
 
@@ -1641,9 +1659,11 @@
         newSortOrder: hasSortOrder ? sortOrder : '',
         baseUpdatedAt: currentUpdatedAt(nodeId)
       }), () => {
-        node.parentId = newParentId;
-        if (hasSortOrder) node.sortOrder = sortOrder;
-        rollupLocalParentStatuses([node.id, oldParentId, newParentId]);
+        const target = state.nodesById.get(nodeId);
+        if (!target) return;
+        target.parentId = newParentId;
+        if (hasSortOrder) target.sortOrder = sortOrder;
+        rollupLocalParentStatuses([target.id, oldParentId, newParentId]);
       }, {
         snapshot: () => rollbackNodes,
         rollback: snapshot => {
@@ -1775,10 +1795,12 @@
           const node = state.nodesById.get(scheduleNodeId);
           if (!node) return;
           saveNodePatch(scheduleNodeId, { startDate: range.startDate, endDate: range.endDate }, () => {
-            node.startDate = range.startDate;
-            node.endDate = range.endDate;
-            node.displayStartDate = range.startDate;
-            node.displayEndDate = range.endDate;
+            const target = state.nodesById.get(scheduleNodeId);
+            if (!target) return;
+            target.startDate = range.startDate;
+            target.endDate = range.endDate;
+            target.displayStartDate = range.startDate;
+            target.displayEndDate = range.endDate;
             state.scrollToNodeId = scheduleNodeId;
           }, { baseUpdatedAt: scheduleNode.updatedAt || '' });
           return;
@@ -1867,10 +1889,12 @@
         const endDate = dayToDate(nextEnd);
         if (startDate !== node.startDate || endDate !== node.endDate) {
           saveNodePatch(node.id, { startDate, endDate }, () => {
-            node.startDate = startDate;
-            node.endDate = endDate;
-            node.displayStartDate = startDate;
-            node.displayEndDate = endDate;
+            const target = state.nodesById.get(node.id);
+            if (!target) return;
+            target.startDate = startDate;
+            target.endDate = endDate;
+            target.displayStartDate = startDate;
+            target.displayEndDate = endDate;
           }, { baseUpdatedAt });
         }
       };

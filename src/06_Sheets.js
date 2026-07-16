@@ -327,17 +327,30 @@ function writeObjects_(sheetName, rows) {
   if (!ordered.length) {
     return;
   }
-  const start = ordered[0];
-  const end = ordered[ordered.length - 1];
-  const rowCount = end - start + 1;
-  const range = sheet.getRange(start, 1, rowCount, headers.length);
-  const values = range.getValues();
-  ordered.forEach(function (rowNumber) {
-    const row = byRow[rowNumber];
-    values[rowNumber - start] = headers.map(function (header) { return sheetValue_(row[header]); });
+  consecutiveRowBlocks_(ordered).forEach(function (block) {
+    const start = block[0];
+    const rowCount = block.length;
+    const values = block.map(function (rowNumber) {
+      const row = byRow[rowNumber];
+      return headers.map(function (header) { return sheetValue_(row[header]); });
+    });
+    applyRowTextFormats_(sheetName, sheet, start, rowCount);
+    sheet.getRange(start, 1, rowCount, headers.length).setValues(values);
   });
-  applyRowTextFormats_(sheetName, sheet, start, rowCount);
-  range.setValues(values);
+}
+
+function consecutiveRowBlocks_(rowNumbers) {
+  const ordered = (rowNumbers || []).map(Number).filter(Number.isFinite).sort(function (a, b) { return a - b; });
+  const blocks = [];
+  ordered.forEach(function (rowNumber) {
+    const block = blocks[blocks.length - 1];
+    if (!block || rowNumber !== block[block.length - 1] + 1) {
+      blocks.push([rowNumber]);
+    } else {
+      block.push(rowNumber);
+    }
+  });
+  return blocks;
 }
 
 function deleteRow_(sheetName, rowNumber) {
@@ -348,6 +361,8 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     normalizeCellValue_: normalizeCellValue_,
     normalizeDateOnlyCell_: normalizeDateOnlyCell_,
-    classifyHeaders_: classifyHeaders_
+    classifyHeaders_: classifyHeaders_,
+    consecutiveRowBlocks_: consecutiveRowBlocks_,
+    writeObjects_: writeObjects_
   };
 }

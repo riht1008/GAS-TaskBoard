@@ -1,6 +1,7 @@
     // State, constants, icons, and global listeners.
     const state = {
       setupRequired: false,
+      setupIncomplete: false,
       nodes: [],
       nodesById: new Map(),
       childrenByParent: new Map(),
@@ -60,7 +61,7 @@
       backgroundChains: new Map(),
       pendingMutationCount: 0,
       mutationGeneration: 0,
-      saveChains: new Map(),
+      nodeMutationChain: null,
       pendingNodeMutations: new Map(),
       savingNodeIds: new Set(),
       requestCounter: 0,

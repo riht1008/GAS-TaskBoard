@@ -23,7 +23,7 @@ global.Utilities = {
 };
 
 const require = createRequire(import.meta.url);
-const { normalizeCellValue_, classifyHeaders_ } = require('../src/06_Sheets.js');
+const { normalizeCellValue_, classifyHeaders_, consecutiveRowBlocks_, writeObjects_ } = require('../src/06_Sheets.js');
 
 test('normalizeCellValue formats milestone Date objects as yyyy-mm-dd in script timezone', () => {
   const value = new Date('2026-07-14T15:00:00.000Z');
@@ -63,4 +63,39 @@ test('classifyHeaders rejects reordered or unexpected columns', () => {
     classifyHeaders_(['NodeId', 'Name', 'Unexpected'], ['NodeId', 'Name']).kind,
     'mismatch'
   );
+});
+
+test('sparse row updates are split into consecutive blocks', () => {
+  assert.deepEqual(consecutiveRowBlocks_([2, 3, 8, 11, 12, 13]), [
+    [2, 3],
+    [8],
+    [11, 12, 13]
+  ]);
+});
+
+test('writeObjects writes only targeted consecutive ranges', () => {
+  const writes = [];
+  global.HEADERS = { Nodes: ['NodeId', 'Name'] };
+  global.TEXT_COLUMNS = { Nodes: [] };
+  global.sheetValue_ = value => value === undefined ? '' : value;
+  global.SpreadsheetApp = {
+    getActive: () => ({
+      getSheetByName: () => ({
+        getRange: (row, column, rowCount, columnCount) => ({
+          setValues: values => writes.push({ row, column, rowCount, columnCount, values })
+        })
+      })
+    })
+  };
+
+  writeObjects_('Nodes', [
+    { __row: 2, NodeId: 'a', Name: 'A' },
+    { __row: 3, NodeId: 'b', Name: 'B' },
+    { __row: 8, NodeId: 'c', Name: 'C' }
+  ]);
+
+  assert.deepEqual(writes, [
+    { row: 2, column: 1, rowCount: 2, columnCount: 2, values: [['a', 'A'], ['b', 'B']] },
+    { row: 8, column: 1, rowCount: 1, columnCount: 2, values: [['c', 'C']] }
+  ]);
 });

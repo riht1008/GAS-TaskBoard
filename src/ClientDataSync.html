@@ -10,6 +10,7 @@
         const data = await serverCall('loadAll');
         if (data.setupRequired) {
           state.setupRequired = true;
+          state.setupIncomplete = Boolean(data.setupIncomplete);
           state.currentEmail = data.currentEmail || '';
           renderSetup();
           return;
@@ -99,6 +100,7 @@
       app.innerHTML = `
         <form class="setup-card" id="setupForm">
           <h1>初回セットアップ</h1>
+          ${state.setupIncomplete ? '<div class="banner">前回の途中データを引き継ぎ、不足分からセットアップを再開します。</div>' : ''}
           <label class="field">
             <span class="field-label">案件名</span>
             <input class="input" name="projectName" required value="新規案件">
@@ -152,6 +154,7 @@
           applyFullData(data);
           persistLocalCache();
           state.setupRequired = false;
+          state.setupIncomplete = false;
           render();
         } catch (error) {
           showToast(error.message, 'error');
@@ -178,6 +181,7 @@
       state.unregistered = Boolean(data.unregistered && !data.currentMember);
       state.spreadsheetId = data.spreadsheetId || state.spreadsheetId || '';
       state.rootId = data.rootId || '';
+      state.setupIncomplete = false;
       if (!options.fromCache) {
         state.syncStatus = 'synced';
         state.lastSyncAt = new Date().toISOString();
@@ -330,6 +334,7 @@
         const data = await serverCall('loadAll');
         if (data.setupRequired) {
           state.setupRequired = true;
+          state.setupIncomplete = Boolean(data.setupIncomplete);
           state.currentEmail = data.currentEmail || state.currentEmail || '';
           renderSetup();
           return;
@@ -377,6 +382,9 @@
 
     function applyMutationResult(result) {
       if (!result) return false;
+      const touchedNodeIds = Array.isArray(result.nodes)
+        ? result.nodes.map(node => node && node.id).filter(Boolean)
+        : [];
       if (result.ok === false) {
         if (Array.isArray(result.nodes)) mergeNodes(result.nodes);
         rebuildIndexes();
@@ -390,6 +398,8 @@
         } else {
           showToast(result.message || '保存できませんでした。', 'error', { sticky: true });
         }
+        reapplyPendingNodeMutations_(touchedNodeIds);
+        rebuildIndexes();
         persistLocalCache();
         render();
         return false;
@@ -422,6 +432,8 @@
       if (result.commentCounts) state.commentCounts = Object.assign({}, state.commentCounts, result.commentCounts);
       if (result.slackSettings) state.slackSettings = Object.assign({}, state.slackSettings, result.slackSettings);
       rebuildIndexes();
+      reapplyPendingNodeMutations_(touchedNodeIds);
+      rebuildIndexes();
       syncDetailDraftAfterMutation();
       if (hasPendingMutations()) {
         state.syncStatus = 'pending';
@@ -453,6 +465,7 @@
     function queueBackgroundMutation(scope, apiName, payload, optimisticApply, rollback, options = {}) {
       if (!state.currentMember && apiName !== 'setupProject' && apiName !== 'joinAsMember') {
         showToast('メンバー未登録のため保存不可', 'error');
+        if (options.onFinally) options.onFinally();
         return Promise.resolve();
       }
       payload = payload || {};
@@ -466,11 +479,17 @@
       persistLocalCache();
       render();
 
-      const previous = state.backgroundChains.get(scope) || Promise.resolve();
-      const chain = previous.catch(() => {}).then(async () => {
+      const affectsNodes = ['upsertMember', 'deleteMember', 'upsertStatusColumn', 'deleteStatusColumn', 'addDependency', 'deleteDependency'].includes(apiName);
+      const scopePrevious = state.backgroundChains.get(scope) || Promise.resolve();
+      const nodePrevious = affectsNodes && state.nodeMutationChain ? state.nodeMutationChain : Promise.resolve();
+      const previous = affectsNodes
+        ? Promise.all([scopePrevious.catch(() => {}), nodePrevious.catch(() => {})])
+        : scopePrevious.catch(() => {});
+      const chain = previous.then(async () => {
         const result = await serverCallWithRetry(apiName, [payload]);
         if (options.beforeApply) options.beforeApply(result);
         const applied = applyMutationResult(result);
+        if (options.onResult) options.onResult(result);
         if (!applied) {
           if (rollback) rollback(result);
           return result;
@@ -489,15 +508,18 @@
       }).finally(() => {
         state.pendingMutationCount = Math.max(0, state.pendingMutationCount - 1);
         if (state.backgroundChains.get(scope) === chain) state.backgroundChains.delete(scope);
+        if (affectsNodes && state.nodeMutationChain === chain) state.nodeMutationChain = null;
         if (state.pendingMutationCount || state.savingNodeIds.size) {
           state.syncStatus = 'pending';
         } else if (state.syncStatus === 'pending') {
           state.syncStatus = 'synced';
           state.lastSyncAt = new Date().toISOString();
         }
+        if (options.onFinally) options.onFinally();
         render();
       });
       state.backgroundChains.set(scope, chain);
+      if (affectsNodes) state.nodeMutationChain = chain;
       return chain;
     }
 
