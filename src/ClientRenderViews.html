@@ -4,6 +4,7 @@
         state.renderDeferred = true;
         return;
       }
+      clearInlineDropdownPortal();
       removeCreatePreview();
       state.renderCache = {};
       if (state.setupRequired) {
@@ -22,10 +23,12 @@
             ${tabButton('list', 'リスト')}
           </nav>
           <div class="top-actions">
-            <button class="button secondary" data-action="members">${icon('users')}メンバー</button>
-            <button class="button secondary" data-action="project-settings" title="プロジェクト設定">${icon('settings')}設定</button>
-            <button class="button secondary" data-action="force-sync" title="強制同期">${icon('refresh')}強制同期</button>
-            <button class="button primary" data-action="confirm-export-wbs" ${state.exportWbsSubmitting ? 'disabled' : ''}>${state.exportWbsSubmitting ? '<span class="btn-spinner"></span>' : icon('database')}WBSに上書き</button>
+            <button class="sync-pill sync-${h(state.syncStatus)}" type="button" data-action="force-sync" title="${h(syncLabel())}。クリックして最新の状態を確認" aria-label="${h(syncLabel())}。クリックして最新の状態を確認">
+              ${icon(syncIconName())}<span>${h(syncPillLabel())}</span>
+            </button>
+            <button class="button ghost" data-action="members">${icon('users')}メンバー</button>
+            <button class="button ghost icon" data-action="project-settings" title="プロジェクト設定" aria-label="プロジェクト設定">${icon('settings')}</button>
+            <button class="button secondary" data-action="confirm-export-wbs" ${state.exportWbsSubmitting ? 'disabled' : ''}>${state.exportWbsSubmitting ? '<span class="btn-spinner"></span>' : icon('database')}WBSに上書き</button>
           </div>
         </header>
         ${state.currentMember ? '' : `<button class="banner banner-action" type="button" data-action="join-member">このメールアドレスはメンバー未登録です。保存操作は利用不可</button>`}
@@ -40,6 +43,7 @@
       restoreGanttScroll(ganttScroll);
       renderDrawerRoot();
       renderDialogRoot();
+      mountInlineDropdownPortal();
       syncModalAccessibility_();
       renderToasts();
       flushPendingNodeScroll();
@@ -274,81 +278,169 @@
     }
 
     function renderFilters() {
+      const activeFields = ['parentId', 'statusIds', 'assigneeId', 'priority', 'date']
+        .filter(field => isFilterFieldActive(field))
+        .filter(field => field !== 'assigneeId' || !state.currentMember || state.filters.assigneeId !== state.currentMember.id);
+      const openField = filterFieldFromControlId(state.openDropdown);
+      const supplementalField = openField && !activeFields.includes(openField) ? openField : '';
       return `
         <section class="filters">
-          <input class="input" id="filterQuery" value="${h(state.filters.query)}" placeholder="検索">
-          ${renderDropdown({
-            scope: 'filters',
-            field: 'parentId',
-            placeholder: '全階層',
-            selected: state.filters.parentId,
-            options: [{ value: '', label: '全階層' }].concat(treeOrderedNodes()
-              .filter(node => node.id !== state.rootId)
-              .map(node => ({ value: node.id, label: `${'　'.repeat(taskDepthOf(node.id))}${node.name}` })))
-          })}
-          ${renderDropdown({
-            scope: 'filters',
-            field: 'statusIds',
-            placeholder: '全ステータス',
-            selected: state.filters.statusIds || [],
-            multi: true,
-            options: state.statusColumns.map(column => ({ value: column.id, label: column.name, color: column.color || defaultStatusColor(column) }))
-          })}
-          ${renderDropdown({
-            scope: 'filters',
-            field: 'assigneeId',
-            placeholder: '全担当',
-            selected: state.filters.assigneeId,
-            options: [{ value: '', label: '全担当' }].concat(state.members.map(member => ({ value: member.id, label: member.name, avatar: member })))
-          })}
-          ${state.currentMember ? `<button class="button secondary compact ${state.filters.assigneeId === state.currentMember.id ? 'active' : ''}" type="button" data-action="filter-self">自分のタスク</button>` : ''}
-          ${renderDropdown({
-            scope: 'filters',
-            field: 'priority',
-            placeholder: '全優先度',
-            selected: state.filters.priority,
-            options: [{ value: '', label: '全優先度' }].concat(priorityOptions())
-          })}
-          ${renderDatePicker({
-            scope: 'filters',
-            field: 'date',
-            selected: state.filters.dateStart,
-            endDate: state.filters.dateEnd,
-            placeholder: '全期間'
-          })}
-          <button class="sync-status" type="button" data-action="force-sync" title="同期">${icon(syncIconName())}<span>${h(syncLabel())}</span></button>
-          ${renderActiveFilterChips()}
+          <label class="filter-search" aria-label="タスクを検索">
+            ${icon('search')}
+            <input class="input" id="filterQuery" value="${h(state.filters.query)}" placeholder="検索">
+          </label>
+          ${state.currentMember ? `<button class="button secondary filter-self ${state.filters.assigneeId === state.currentMember.id ? 'active' : ''}" type="button" data-action="filter-self">自分のタスク</button>` : ''}
+          ${activeFields.map(field => renderFilterControl(field)).join('')}
+          ${supplementalField ? renderFilterControl(supplementalField, !isFilterFieldActive(supplementalField)) : ''}
+          ${renderAddFilterMenu()}
+          ${activeFields.length || (state.currentMember && state.filters.assigneeId === state.currentMember.id)
+            ? `<button class="button ghost filter-clear-all" type="button" data-action="clear-filters" title="すべての条件を解除">すべて解除</button>`
+            : ''}
+          ${renderFilterViewActions()}
         </section>
       `;
     }
 
-    function renderActiveFilterChips() {
-      const chips = [];
-      if (state.filters.parentId) {
-        const node = state.nodesById.get(state.filters.parentId);
-        chips.push({ field: 'parentId', label: node ? `階層: ${node.name}` : '階層' });
+    function renderFilterControl(field, transient = false) {
+      const label = filterFieldLabel(field, transient);
+      const triggerHtml = `<span class="filter-chip-label"><span class="filter-chip-dot"></span>${h(label)}</span>`;
+      let picker = '';
+      if (field === 'parentId') {
+        picker = renderDropdown({
+          scope: 'filters',
+          field,
+          plain: true,
+          triggerHtml,
+          placeholder: '階層を選択',
+          selected: state.filters.parentId,
+          options: [{ value: '', label: 'すべての階層' }].concat(treeOrderedNodes()
+            .filter(node => node.id !== state.rootId)
+            .map(node => ({ value: node.id, label: `${'　'.repeat(taskDepthOf(node.id))}${node.name}` })))
+        });
+      } else if (field === 'statusIds') {
+        picker = renderDropdown({
+          scope: 'filters',
+          field,
+          plain: true,
+          triggerHtml,
+          placeholder: 'ステータスを選択',
+          selected: state.filters.statusIds || [],
+          multi: true,
+          options: state.statusColumns.map(column => ({ value: column.id, label: column.name, color: column.color || defaultStatusColor(column) }))
+        });
+      } else if (field === 'assigneeId') {
+        picker = renderDropdown({
+          scope: 'filters',
+          field,
+          plain: true,
+          triggerHtml,
+          placeholder: '担当者を選択',
+          selected: state.filters.assigneeId,
+          options: [{ value: '', label: 'すべての担当者' }].concat(state.members.map(member => ({ value: member.id, label: member.name, avatar: member })))
+        });
+      } else if (field === 'priority') {
+        picker = renderDropdown({
+          scope: 'filters',
+          field,
+          plain: true,
+          triggerHtml,
+          placeholder: '優先度を選択',
+          selected: state.filters.priority,
+          options: [{ value: '', label: 'すべての優先度' }].concat(priorityOptions())
+        });
+      } else if (field === 'date') {
+        picker = renderDatePicker({
+          scope: 'filters',
+          field,
+          plain: true,
+          triggerHtml,
+          selected: state.filters.dateStart,
+          endDate: state.filters.dateEnd,
+          placeholder: '期間を選択'
+        });
       }
-      if ((state.filters.statusIds || []).length) {
-        const names = state.filters.statusIds.map(id => statusName(id)).filter(Boolean);
-        chips.push({ field: 'statusIds', label: `ステータス: ${names.slice(0, 3).join('・')}${names.length > 3 ? ` +${names.length - 3}` : ''}` });
-      }
-      if (state.filters.assigneeId) {
-        const member = state.memberById.get(state.filters.assigneeId);
-        chips.push({ field: 'assigneeId', label: member ? `担当: ${member.name}` : '担当' });
-      }
-      if (state.filters.priority) {
-        chips.push({ field: 'priority', label: `優先度: ${priorityLabel(state.filters.priority)}` });
-      }
-      if (state.filters.dateStart && state.filters.dateEnd) {
-        chips.push({ field: 'date', label: `作業日: ${formatDateFilterLabel()}` });
-      }
-      if (!chips.length) return '';
       return `
-        <div class="filter-chips">
-          ${chips.map(chip => `<button class="filter-chip" type="button" data-action="clear-filter" data-filter-field="${h(chip.field)}">${h(chip.label)}${icon('x')}</button>`).join('')}
-          <button class="filter-chip muted" type="button" data-action="clear-filters">すべて解除</button>
+        <div class="active-filter-control ${transient ? 'transient' : ''}">
+          ${picker}
+          <button class="filter-chip-remove" type="button" data-action="clear-filter" data-filter-field="${h(field)}" title="${h(label)}を解除" aria-label="${h(label)}を解除">${icon('x')}</button>
         </div>
       `;
+    }
+
+    function renderAddFilterMenu() {
+      const fields = [
+        { field: 'parentId', label: '階層' },
+        { field: 'statusIds', label: 'ステータス' },
+        { field: 'assigneeId', label: '担当者' },
+        { field: 'priority', label: '優先度' },
+        { field: 'date', label: '期間' }
+      ];
+      const id = 'filter:add';
+      return `
+        <div class="dropdown filter-add-menu" data-dropdown="${id}">
+          <button class="button filter-add-trigger" type="button" data-dropdown-trigger="${id}" aria-haspopup="menu" aria-expanded="${state.openDropdown === id ? 'true' : 'false'}">${icon('plus')}フィルタ</button>
+          ${state.openDropdown === id ? `
+            <div class="dropdown-menu filter-picker-menu" role="menu">
+              ${fields.map(item => `
+                <button class="filter-menu-option ${isFilterFieldActive(item.field) ? 'active' : ''}" type="button" role="menuitem" data-action="edit-filter" data-filter-field="${item.field}" data-filter-menu-option>
+                  <span>${item.label}</span>${isFilterFieldActive(item.field) ? icon('check') : ''}
+                </button>
+              `).join('')}
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }
+
+    function renderFilterViewActions() {
+      if (state.view !== 'kanban') return '';
+      return `
+        <div class="filter-view-actions" role="group" aria-label="看板の表示設定">
+          <label class="switch compact-switch"><input id="toggleGroups" type="checkbox" ${checked(state.showGroupsInKanban)}> 親も表示</label>
+          <button class="button secondary" type="button" data-action="toggle-member-rail" title="担当者一覧の表示を切り替え">${icon('users')}${state.kanbanMemberRailCollapsed ? '担当者' : '担当者を隠す'}</button>
+          <button class="button secondary" type="button" data-action="new-status">${icon('plus')}列を追加</button>
+        </div>
+      `;
+    }
+
+    function filterFieldFromControlId(id) {
+      const text = String(id || '');
+      if (!text.startsWith('filters:')) return '';
+      const field = text.slice('filters:'.length);
+      return ['parentId', 'statusIds', 'assigneeId', 'priority', 'date'].includes(field) ? field : '';
+    }
+
+    function isFilterFieldActive(field) {
+      if (field === 'statusIds') return Boolean((state.filters.statusIds || []).length);
+      if (field === 'date') return Boolean(state.filters.dateStart && state.filters.dateEnd);
+      return Boolean(state.filters[field]);
+    }
+
+    function filterFieldLabel(field, transient) {
+      if (transient) {
+        return {
+          parentId: '階層を選択',
+          statusIds: 'ステータスを選択',
+          assigneeId: '担当者を選択',
+          priority: '優先度を選択',
+          date: '期間を選択'
+        }[field] || '条件を選択';
+      }
+      if (field === 'parentId') {
+        const node = state.nodesById.get(state.filters.parentId);
+        return node ? `階層: ${node.name}` : '階層';
+      }
+      if (field === 'statusIds') {
+        const names = state.filters.statusIds.map(id => statusName(id)).filter(Boolean);
+        return `ステータス: ${names.slice(0, 2).join('・')}${names.length > 2 ? ` +${names.length - 2}` : ''}`;
+      }
+      if (field === 'assigneeId') {
+        const member = state.memberById.get(state.filters.assigneeId);
+        return member ? `担当: ${member.name}` : '担当';
+      }
+      if (field === 'priority') return `優先度: ${priorityLabel(state.filters.priority)}`;
+      if (field === 'date') return `期間: ${formatDateFilterLabel()}`;
+      return '条件';
     }
 
     function renderMain() {
@@ -362,12 +454,7 @@
         .filter(node => node.id !== state.rootId)
         .filter(node => state.showGroupsInKanban || node.isLeaf);
       return `
-        <section class="view">
-          <div class="view-toolbar">
-            <label class="switch"><input id="toggleGroups" type="checkbox" ${checked(state.showGroupsInKanban)}> 親ノードも表示</label>
-            <button class="button secondary compact" type="button" data-action="toggle-member-rail" title="担当者一覧の表示を切り替え">${icon('users')}${state.kanbanMemberRailCollapsed ? '担当者を表示' : '担当者を隠す'}</button>
-            <button class="button secondary" data-action="new-status">${icon('plus')}列を追加</button>
-          </div>
+        <section class="view kanban-view">
           <div class="board-layout ${state.kanbanMemberRailCollapsed ? 'member-rail-collapsed' : ''}">
             ${state.kanbanMemberRailCollapsed ? '' : renderMemberRail()}
             <div class="columns">
@@ -573,6 +660,9 @@
       const today = localTodayDay();
       const todayLeft = (today - scale.startDay) * scale.dayWidth;
       const activeScale = nearestGanttScaleFactor(state.ganttScaleFactor);
+      const activeScaleIndex = GANTT_SCALE_LEVELS.indexOf(activeScale);
+      const previousScale = GANTT_SCALE_LEVELS[Math.max(0, activeScaleIndex - 1)];
+      const nextScale = GANTT_SCALE_LEVELS[Math.min(GANTT_SCALE_LEVELS.length - 1, activeScaleIndex + 1)];
       const treeWidth = clampGanttTreeWidth(state.ganttTreeWidth);
       return `
         <section class="view">
@@ -582,12 +672,10 @@
             </div>
             <div class="gantt-scale-control" title="横の縮尺">
               ${icon('scale')}
-              <div class="gantt-scale-steps" role="group" aria-label="横の縮尺">
-                ${GANTT_SCALE_LEVELS.map(level => `
-                  <button class="gantt-scale-step ${level === activeScale ? 'active' : ''}" type="button" data-gantt-scale-level="${level}" aria-pressed="${level === activeScale}">
-                    ${h(ganttScalePercent(level))}
-                  </button>
-                `).join('')}
+              <div class="gantt-scale-stepper" role="group" aria-label="横の縮尺">
+                <button class="gantt-scale-step" type="button" data-gantt-scale-level="${previousScale}" ${activeScaleIndex === 0 ? 'disabled' : ''} aria-label="縮小">−</button>
+                <span class="gantt-scale-value" aria-live="polite">${h(ganttScalePercent(activeScale))}</span>
+                <button class="gantt-scale-step" type="button" data-gantt-scale-level="${nextScale}" ${activeScaleIndex === GANTT_SCALE_LEVELS.length - 1 ? 'disabled' : ''} aria-label="拡大">＋</button>
               </div>
             </div>
             <button class="button primary compact" type="button" data-action="create-child-shell" data-parent-id="${h(state.rootId)}">${icon('plus')}タスクを追加</button>

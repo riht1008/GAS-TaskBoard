@@ -22,7 +22,7 @@
       view: 'kanban',
       filters: { query: '', parentId: '', statusIds: [], assigneeId: '', priority: '', dateStart: '', dateEnd: '' },
       showGroupsInKanban: false,
-      kanbanMemberRailCollapsed: false,
+      kanbanMemberRailCollapsed: true,
       collapsed: new Set(),
       drawerNodeId: '',
       detailDraftNodeId: '',
@@ -91,6 +91,7 @@
       plus: '<path d="M12 5v14"></path><path d="M5 12h14"></path>',
       users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path>',
       settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.51a2 2 0 0 1 1-1.72l.15-.1a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2Z"></path><circle cx="12" cy="12" r="3"></circle>',
+      search: '<circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path>',
       refresh: '<path d="M21 12a9 9 0 0 1-15.3 6.36"></path><path d="M3 12A9 9 0 0 1 18.3 5.64"></path><path d="M21 3v6h-6"></path><path d="M3 21v-6h6"></path>',
       grip: '<circle cx="9" cy="5" r="1"></circle><circle cx="9" cy="12" r="1"></circle><circle cx="9" cy="19" r="1"></circle><circle cx="15" cy="5" r="1"></circle><circle cx="15" cy="12" r="1"></circle><circle cx="15" cy="19" r="1"></circle>',
       edit: '<path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path>',
@@ -141,7 +142,7 @@
     });
     document.addEventListener('keydown', handleGlobalKeydown);
     document.addEventListener('click', event => {
-      if (state.openDropdown && !event.target.closest('.dropdown')) {
+      if (state.openDropdown && !event.target.closest('.dropdown') && !event.target.closest('[data-dropdown-portal]')) {
         state.openDropdown = '';
         state.calendarView = null;
         render();

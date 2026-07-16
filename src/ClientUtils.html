@@ -780,6 +780,17 @@
       return `同期済み ${date.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}`;
     }
 
+    function syncPillLabel() {
+      if (state.syncStatus === 'syncing') return '同期中';
+      if (state.syncStatus === 'error') return '同期エラー';
+      if (state.syncStatus === 'local') return 'ローカル';
+      if (state.syncStatus === 'pending') return '保存待ち';
+      if (!state.lastSyncAt) return '同期待ち';
+      const date = new Date(state.lastSyncAt);
+      if (Number.isNaN(date.getTime())) return '同期済み';
+      return date.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+    }
+
     function formatShortRange(start, end) {
       if (!start && !end) return '';
       if (start && end) {

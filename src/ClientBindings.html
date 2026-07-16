@@ -93,6 +93,9 @@
         });
         bindOnce(option, 'keydown', handleDropdownOptionKeydown);
       });
+      container.querySelectorAll('[data-filter-menu-option]').forEach(option => {
+        bindOnce(option, 'keydown', handleFilterMenuOptionKeydown);
+      });
       container.querySelectorAll('[data-calendar-hover-day]').forEach(dayButton => {
         bindOnce(dayButton, 'mouseenter', () => {
           const id = dayButton.dataset.calendarId;
@@ -111,6 +114,85 @@
           render();
         });
       });
+    }
+
+    let inlineDropdownPortalCleanup = null;
+
+    function clearInlineDropdownPortal() {
+      if (inlineDropdownPortalCleanup) inlineDropdownPortalCleanup();
+      inlineDropdownPortalCleanup = null;
+      const portalRoot = document.getElementById('dropdownPortalRoot');
+      if (portalRoot) portalRoot.replaceChildren();
+    }
+
+    function mountInlineDropdownPortal() {
+      const id = state.openDropdown;
+      if (!id) return;
+      const dropdown = Array.from(app.querySelectorAll('[data-dropdown]'))
+        .find(item => item.dataset.dropdown === id && String(item.dataset.scope || '').startsWith('inline:'));
+      if (!dropdown) return;
+      const trigger = dropdown.querySelector('[data-dropdown-trigger]');
+      const menu = dropdown.querySelector('.dropdown-menu');
+      const portalRoot = document.getElementById('dropdownPortalRoot');
+      if (!trigger || !menu || !portalRoot) return;
+
+      const initialRect = menu.getBoundingClientRect();
+      const naturalSize = {
+        width: Math.max(initialRect.width, trigger.getBoundingClientRect().width),
+        height: initialRect.height
+      };
+      menu.classList.add('dropdown-menu-portal');
+      menu.dataset.dropdownPortal = id;
+      portalRoot.appendChild(menu);
+
+      let frame = 0;
+      const position = () => {
+        frame = 0;
+        positionInlineDropdownPortal(trigger, menu, naturalSize);
+      };
+      const schedulePosition = () => {
+        if (frame) cancelAnimationFrame(frame);
+        frame = requestAnimationFrame(position);
+      };
+      position();
+
+      const scrollParent = trigger.closest('.table-wrap');
+      window.addEventListener('resize', schedulePosition);
+      if (scrollParent) scrollParent.addEventListener('scroll', schedulePosition, { passive: true });
+      inlineDropdownPortalCleanup = () => {
+        if (frame) cancelAnimationFrame(frame);
+        window.removeEventListener('resize', schedulePosition);
+        if (scrollParent) scrollParent.removeEventListener('scroll', schedulePosition);
+      };
+    }
+
+    function positionInlineDropdownPortal(trigger, menu, naturalSize) {
+      const gap = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--space-2')) || 8;
+      const triggerRect = trigger.getBoundingClientRect();
+      const viewportWidth = document.documentElement.clientWidth;
+      const viewportHeight = document.documentElement.clientHeight;
+      const width = Math.min(naturalSize.width, Math.max(0, viewportWidth - gap * 2));
+      const availableBelow = Math.max(0, viewportHeight - triggerRect.bottom - gap * 2);
+      const availableAbove = Math.max(0, triggerRect.top - gap * 2);
+      const opensAbove = naturalSize.height > availableBelow && availableAbove > availableBelow;
+      const availableHeight = opensAbove ? availableAbove : availableBelow;
+      const height = Math.min(naturalSize.height, availableHeight);
+
+      let left = triggerRect.left;
+      if (left + width > viewportWidth - gap) left = triggerRect.right - width;
+      left = Math.max(gap, Math.min(left, viewportWidth - width - gap));
+
+      let top = opensAbove
+        ? triggerRect.top - gap - height
+        : triggerRect.bottom + gap;
+      top = Math.max(gap, Math.min(top, viewportHeight - height - gap));
+
+      menu.style.width = `${width}px`;
+      menu.style.maxHeight = `${availableHeight}px`;
+      menu.style.overflowY = naturalSize.height > availableHeight ? 'auto' : '';
+      menu.style.left = `${left}px`;
+      menu.style.top = `${top}px`;
+      menu.dataset.placement = opensAbove ? 'top' : 'bottom';
     }
 
     function bindKanban() {
@@ -472,7 +554,19 @@
       if (action === 'clear-filter') {
         const field = event.currentTarget.dataset.filterField;
         clearFilterField(field);
+        state.openDropdown = '';
+        state.calendarView = null;
         render();
+        return;
+      }
+      if (action === 'edit-filter') {
+        event.stopPropagation();
+        const field = event.currentTarget.dataset.filterField;
+        const id = `filters:${field}`;
+        state.openDropdown = id;
+        if (field === 'date') ensureCalendarView(id);
+        render();
+        focusFirstDropdownOption();
         return;
       }
       if (action === 'clear-filters') {
@@ -500,6 +594,7 @@
       if (action === 'filter-self') {
         const memberId = state.currentMember ? state.currentMember.id : '';
         state.filters.assigneeId = state.filters.assigneeId === memberId ? '' : memberId;
+        state.openDropdown = '';
         render();
         return;
       }
@@ -918,11 +1013,34 @@
       }
     }
 
+    function handleFilterMenuOptionKeydown(event) {
+      const menu = event.currentTarget.closest('.filter-picker-menu');
+      const options = menu ? Array.from(menu.querySelectorAll('[data-filter-menu-option]')) : [];
+      const index = options.indexOf(event.currentTarget);
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        (options[index + 1] || options[0]).focus();
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        (options[index - 1] || options[options.length - 1]).focus();
+      }
+      if (event.key === 'Escape') {
+        state.openDropdown = '';
+        render();
+      }
+    }
+
     function focusFirstDropdownOption() {
       requestAnimationFrame(() => {
         const option = document.querySelector('[data-dropdown-option]');
         if (option) {
           option.focus();
+          return;
+        }
+        const filterOption = document.querySelector('[data-filter-menu-option]');
+        if (filterOption) {
+          filterOption.focus();
           return;
         }
         const day = document.querySelector('.calendar-day:not(:disabled)');
