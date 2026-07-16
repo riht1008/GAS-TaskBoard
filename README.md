@@ -60,3 +60,10 @@ clasp push
 ```
 
 ローカルでは GAS API 自体は実行できないため、Apps Script 固有部分は `clasp push` 後に Web アプリ上で確認してください。
+
+## コード統計
+
+`main` への push 時に GitHub Actions (`.github/workflows/analyze-code.yml`) が自動更新します。
+
+<!-- LANGUAGES BREAKDOWN START -->
+<!-- LANGUAGES BREAKDOWN END -->
