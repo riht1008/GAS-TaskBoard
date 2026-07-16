@@ -1,4 +1,4 @@
-# testフォルダを削除
-tests/
+# ローカル回帰テストはリポジトリに含める（clasp対象外は.claspignoreで制御）
+.DS_Store
 
 .clasp.json

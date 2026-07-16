@@ -2,25 +2,69 @@
  * Member and comment APIs.
  */
 
-function getComments(nodeId) {
+function getComments(nodeId, options) {
   requireSchemaExists_();
-  const rows = readAll_();
+  const rows = readCommentSnapshot_();
   const active = activeNodes_(rows.nodes);
   if (!byId_(active, 'NodeId')[cleanString_(nodeId)]) {
     throw new Error('ノードが見つかりません。');
   }
-  return rows.comments
+  const comments = rows.comments
     .filter(function (c) { return cleanString_(c.NodeId) === cleanString_(nodeId); })
     .sort(function (a, b) { return cleanString_(a.Timestamp).localeCompare(cleanString_(b.Timestamp)); })
     .map(clientComment_);
+  if (!options || typeof options !== 'object') {
+    return comments;
+  }
+  return commentPage_(comments, options);
+}
+
+function commentPage_(comments, options) {
+  const limit = Math.min(100, Math.max(10, Number(options.limit) || 50));
+  const beforeTimestamp = cleanString_(options.beforeTimestamp);
+  const beforeId = cleanString_(options.beforeId);
+  const repliesByParent = {};
+  const parents = [];
+  (comments || []).forEach(function (comment) {
+    const parentId = cleanString_(comment.parentCommentId);
+    if (parentId) {
+      if (!repliesByParent[parentId]) repliesByParent[parentId] = [];
+      repliesByParent[parentId].push(comment);
+    } else {
+      const timestamp = cleanString_(comment.timestamp);
+      const id = cleanString_(comment.id);
+      if (!beforeTimestamp || timestamp < beforeTimestamp || (timestamp === beforeTimestamp && id < beforeId)) {
+        parents.push(comment);
+      }
+    }
+  });
+  parents.sort(function (a, b) {
+    return cleanString_(b.timestamp).localeCompare(cleanString_(a.timestamp)) || cleanString_(b.id).localeCompare(cleanString_(a.id));
+  });
+  const selected = parents.slice(0, limit).reverse();
+  const pageComments = [];
+  selected.forEach(function (parent) {
+    pageComments.push(parent);
+    (repliesByParent[cleanString_(parent.id)] || []).forEach(function (reply) { pageComments.push(reply); });
+  });
+  const oldest = selected[0] || null;
+  return {
+    ok: true,
+    comments: pageComments,
+    hasMore: parents.length > selected.length,
+    nextCursor: oldest ? {
+      beforeTimestamp: cleanString_(oldest.timestamp),
+      beforeId: cleanString_(oldest.id)
+    } : null
+  };
 }
 
 function addComment(payload) {
   payload = payload || {};
   return withLock_(function () {
     requireSchemaExists_();
-    const actor = requireCurrentMember_();
-    const rows = readAll_();
+    const rows = readCommentSnapshot_();
+    const actor = requireCurrentMember_(rows.members);
     const activeMap = byId_(activeNodes_(rows.nodes), 'NodeId');
     const nodeId = cleanString_(payload.nodeId);
     if (!activeMap[nodeId]) {
@@ -63,8 +107,10 @@ function addComment(payload) {
       Mentions: mentions.join(',')
     };
     appendObject_(SHEET.COMMENTS, comment);
-    const freshRows = readAll_();
-    return { ok: true, comment: clientComment_(comment), nodeId: nodeId, commentCounts: commentCounts_(freshRows) };
+    const nodeCommentCount = rows.comments.filter(function (item) { return cleanString_(item.NodeId) === nodeId; }).length + 1;
+    const counts = {};
+    counts[nodeId] = nodeCommentCount;
+    return { ok: true, comment: clientComment_(comment), nodeId: nodeId, commentCounts: counts };
   });
 }
 
@@ -76,7 +122,7 @@ function joinAsMember(payload) {
     if (!email) {
       throw new Error('ログインユーザーのメールアドレスを取得できません。Workspace ドメイン内のアカウントで開いてください。');
     }
-    const rows = readAll_();
+    const rows = readMemberSnapshot_();
     const existing = rows.members.find(function (m) { return normalizeEmail_(m.Email) === email; });
     if (existing) {
       return {
@@ -100,7 +146,7 @@ function joinAsMember(payload) {
       Color: color,
       Company: cleanString_(payload.company)
     });
-    const freshMembers = readAll_().members;
+    const freshMembers = readMemberSnapshot_().members;
     const currentMember = freshMembers.find(function (m) { return normalizeEmail_(m.Email) === email; });
     return {
       ok: true,
@@ -114,8 +160,8 @@ function upsertMember(payload) {
   payload = payload || {};
   return withLock_(function () {
     requireSchemaExists_();
-    requireCurrentMember_();
-    const rows = readAll_();
+    const rows = readMemberSnapshot_();
+    requireCurrentMember_(rows.members);
     const memberId = cleanString_(payload.memberId);
     const email = normalizeEmail_(payload.email);
     const name = requireName_(payload.name);
@@ -152,7 +198,7 @@ function upsertMember(payload) {
         Company: company
       });
     }
-    return { ok: true, members: readAll_().members.map(clientMember_) };
+    return { ok: true, members: readMemberSnapshot_().members.map(clientMember_) };
   });
 }
 
@@ -160,8 +206,8 @@ function deleteMember(payload) {
   payload = payload || {};
   return withLock_(function () {
     requireSchemaExists_();
-    const actor = requireCurrentMember_();
-    const rows = readAll_();
+    const rows = readMemberSnapshot_();
+    const actor = requireCurrentMember_(rows.members);
     const memberId = cleanString_(payload.memberId);
     const member = rows.members.find(function (m) { return cleanString_(m.MemberId) === memberId; });
     if (!member) {
@@ -187,7 +233,7 @@ function deleteMember(payload) {
     writeObjects_(SHEET.NODES, affected);
     deleteRow_(SHEET.MEMBERS, member.__row);
 
-    const freshRows = readAll_();
+    const freshRows = readMemberSnapshot_();
     return {
       ok: true,
       members: freshRows.members.map(clientMember_),
@@ -195,4 +241,10 @@ function deleteMember(payload) {
       nodes: clientNodesByIds_(freshRows, affected.map(function (n) { return n.NodeId; }))
     };
   });
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    commentPage_: commentPage_
+  };
 }

@@ -3,15 +3,15 @@
  */
 
 var WBS_SHEET_NAME = 'WBS';
-var WBS_EXPORT_GUARD_KEY = 'WBS_EXPORT_STARTED_AT';
-var WBS_EXPORT_GUARD_MS = 60 * 1000;
+var WBS_EXPORT_GUARD_KEY = 'WBS_EXPORT_GUARD';
+var WBS_EXPORT_GUARD_MS = 15 * 60 * 1000;
 
 function upsertMilestone(payload) {
   payload = payload || {};
   return withLock_(function () {
     requireSchemaExists_();
-    requireCurrentMember_();
-    const rows = readAll_();
+    const rows = readProjectSettingsSnapshot_();
+    requireCurrentMember_(rows.members);
     const milestoneId = cleanString_(payload.milestoneId);
     const name = requireName_(payload.name);
     const date = cleanString_(payload.date);
@@ -47,7 +47,7 @@ function upsertMilestone(payload) {
         SortOrder: sortOrder
       });
     }
-    return { ok: true, milestones: readAll_().milestones.map(clientMilestone_).sort(compareSortOrder_) };
+    return { ok: true, milestones: readProjectSettingsSnapshot_().milestones.map(clientMilestone_).sort(compareSortOrder_) };
   });
 }
 
@@ -55,15 +55,15 @@ function deleteMilestone(payload) {
   payload = payload || {};
   return withLock_(function () {
     requireSchemaExists_();
-    requireCurrentMember_();
-    const rows = readAll_();
+    const rows = readProjectSettingsSnapshot_();
+    requireCurrentMember_(rows.members);
     const milestoneId = cleanString_(payload.milestoneId);
     const milestone = rows.milestones.find(function (item) { return cleanString_(item.MilestoneId) === milestoneId; });
     if (!milestone) {
       throw new Error('マイルストーンが見つかりません。');
     }
     deleteRow_(SHEET.MILESTONES, milestone.__row);
-    return { ok: true, milestones: readAll_().milestones.map(clientMilestone_).sort(compareSortOrder_) };
+    return { ok: true, milestones: readProjectSettingsSnapshot_().milestones.map(clientMilestone_).sort(compareSortOrder_) };
   });
 }
 
@@ -71,8 +71,8 @@ function upsertMeeting(payload) {
   payload = payload || {};
   return withLock_(function () {
     requireSchemaExists_();
-    requireCurrentMember_();
-    const rows = readAll_();
+    const rows = readProjectSettingsSnapshot_();
+    requireCurrentMember_(rows.members);
     const meetingId = cleanString_(payload.meetingId);
     const name = requireName_(payload.name);
     const scheduleRule = normalizeMeetingScheduleRulePayload_(payload);
@@ -112,7 +112,7 @@ function upsertMeeting(payload) {
         EndDate: scheduleRule.endDate || ''
       });
     }
-    return { ok: true, meetings: readAll_().meetings.map(clientMeeting_).sort(compareSortOrder_) };
+    return { ok: true, meetings: readProjectSettingsSnapshot_().meetings.map(clientMeeting_).sort(compareSortOrder_) };
   });
 }
 
@@ -120,15 +120,15 @@ function deleteMeeting(payload) {
   payload = payload || {};
   return withLock_(function () {
     requireSchemaExists_();
-    requireCurrentMember_();
-    const rows = readAll_();
+    const rows = readProjectSettingsSnapshot_();
+    requireCurrentMember_(rows.members);
     const meetingId = cleanString_(payload.meetingId);
     const meeting = rows.meetings.find(function (item) { return cleanString_(item.MeetingId) === meetingId; });
     if (!meeting) {
       throw new Error('会議体が見つかりません。');
     }
     deleteRow_(SHEET.MEETINGS, meeting.__row);
-    return { ok: true, meetings: readAll_().meetings.map(clientMeeting_).sort(compareSortOrder_) };
+    return { ok: true, meetings: readProjectSettingsSnapshot_().meetings.map(clientMeeting_).sort(compareSortOrder_) };
   });
 }
 
@@ -233,13 +233,8 @@ function meetingShortDate_(dateText) {
 function exportWbs() {
   requireSchemaExists_();
   const actor = requireCurrentMember_();
-  const scriptProps = PropertiesService.getScriptProperties();
-  const nowMs = Date.now();
-  const runningAt = Number(scriptProps.getProperty(WBS_EXPORT_GUARD_KEY)) || 0;
-  if (runningAt && nowMs - runningAt < WBS_EXPORT_GUARD_MS) {
-    throw new Error('WBS出力が実行中です。しばらくして再試行してください。');
-  }
-  scriptProps.setProperty(WBS_EXPORT_GUARD_KEY, String(nowMs));
+  const guardToken = acquireWbsExportGuard_();
+  const startedAt = Date.now();
 
   try {
     const rows = readAll_({ includeActivityLog: true });
@@ -253,7 +248,7 @@ function exportWbs() {
       createdAt: createdAt,
       version: version
     });
-    writeWbsSheet_(model);
+    writeWbsSheetStaged_(model);
     documentProps.setProperty('WBS_CREATED_AT', createdAt);
     documentProps.setProperty('WBS_VERSION', String(version));
     return {
@@ -262,15 +257,60 @@ function exportWbs() {
       rowCount: model.taskRows.length,
       warning: model.warning || ''
     };
+  } catch (error) {
+    console.error('WBS export failed after ' + String(Date.now() - startedAt) + 'ms: ' + cleanString_(error && error.stack || error));
+    throw error;
   } finally {
-    scriptProps.deleteProperty(WBS_EXPORT_GUARD_KEY);
+    console.info('WBS export finished in ' + String(Date.now() - startedAt) + 'ms');
+    releaseWbsExportGuard_(guardToken);
+  }
+}
+
+function acquireWbsExportGuard_() {
+  return withLock_(function () {
+    const props = PropertiesService.getScriptProperties();
+    const now = Date.now();
+    let current = null;
+    try {
+      current = JSON.parse(props.getProperty(WBS_EXPORT_GUARD_KEY) || 'null');
+    } catch (error) {
+      current = null;
+    }
+    if (current && Number(current.startedAt) && now - Number(current.startedAt) < WBS_EXPORT_GUARD_MS) {
+      throw appError_('WBS_BUSY', 'WBS出力が実行中です。しばらくして再試行してください。', true);
+    }
+    const token = newId_();
+    props.setProperty(WBS_EXPORT_GUARD_KEY, JSON.stringify({ token: token, startedAt: now }));
+    return token;
+  });
+}
+
+function releaseWbsExportGuard_(token) {
+  try {
+    withLock_(function () {
+      const props = PropertiesService.getScriptProperties();
+      let current = null;
+      try {
+        current = JSON.parse(props.getProperty(WBS_EXPORT_GUARD_KEY) || 'null');
+      } catch (error) {
+        current = null;
+      }
+      if (!current || cleanString_(current.token) === cleanString_(token)) {
+        props.deleteProperty(WBS_EXPORT_GUARD_KEY);
+      }
+    });
+  } catch (error) {
+    console.error('WBS guard cleanup failed: ' + cleanString_(error && error.message));
   }
 }
 
 function buildWbsModel_(rows, options) {
   rows = rows || {};
   options = options || {};
-  const nodes = (rows.nodes || []).filter(function (node) { return !wbsClean_(wbsGet_(node, 'DeletedAt', 'deletedAt')); });
+  const nodes = (rows.nodes || []).filter(function (node) {
+    return !wbsClean_(wbsGet_(node, 'DeletedAt', 'deletedAt')) &&
+      !wbsClean_(wbsGet_(node, 'DraftOwner', 'draftOwner'));
+  });
   const members = rows.members || [];
   const statusColumns = rows.statusColumns || [];
   const milestones = (rows.milestones || []).slice().sort(wbsCompareSort_);
@@ -618,9 +658,55 @@ function fillWbsTasks_(values, backgrounds, layout, context) {
   });
 }
 
-function writeWbsSheet_(model) {
+function writeWbsSheetStaged_(model) {
   const ss = SpreadsheetApp.getActive();
-  let sheet = ss.getSheetByName(WBS_SHEET_NAME);
+  const suffix = String(Date.now()) + '_' + newId_().slice(0, 8);
+  const stagingName = '__WBS_STAGING_' + suffix;
+  const backupName = '__WBS_BACKUP_' + suffix;
+  const existing = ss.getSheetByName(WBS_SHEET_NAME);
+  const existingIndex = existing ? existing.getIndex() : null;
+  const staging = ss.insertSheet(stagingName);
+  let backup = null;
+  try {
+    writeWbsSheet_(model, staging);
+    if (existing) {
+      existing.setName(backupName);
+      backup = existing;
+    }
+    staging.setName(WBS_SHEET_NAME);
+    if (existingIndex) {
+      ss.setActiveSheet(staging);
+      ss.moveActiveSheet(existingIndex);
+    }
+    if (backup) {
+      try {
+        ss.deleteSheet(backup);
+      } catch (cleanupError) {
+        console.error('WBS backup cleanup failed: ' + cleanString_(cleanupError && cleanupError.message));
+      }
+    }
+  } catch (error) {
+    const currentWbs = ss.getSheetByName(WBS_SHEET_NAME);
+    backup = ss.getSheetByName(backupName);
+    if (backup) {
+      if (currentWbs && currentWbs.getSheetId() === staging.getSheetId()) {
+        ss.deleteSheet(currentWbs);
+      } else {
+        const currentStaging = ss.getSheetByName(stagingName);
+        if (currentStaging) ss.deleteSheet(currentStaging);
+      }
+      if (!ss.getSheetByName(WBS_SHEET_NAME)) backup.setName(WBS_SHEET_NAME);
+    } else {
+      const currentStaging = ss.getSheetByName(stagingName);
+      if (currentStaging) ss.deleteSheet(currentStaging);
+    }
+    throw error;
+  }
+}
+
+function writeWbsSheet_(model, targetSheet) {
+  const ss = SpreadsheetApp.getActive();
+  let sheet = targetSheet || ss.getSheetByName(WBS_SHEET_NAME);
   if (!sheet) {
     sheet = ss.insertSheet(WBS_SHEET_NAME);
   }

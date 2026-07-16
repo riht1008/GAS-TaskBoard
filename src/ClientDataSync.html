@@ -10,16 +10,18 @@
         const data = await serverCall('loadAll');
         if (data.setupRequired) {
           state.setupRequired = true;
+          state.setupIncomplete = Boolean(data.setupIncomplete);
           state.currentEmail = data.currentEmail || '';
           renderSetup();
           return;
         }
         applyFullData(data);
         persistLocalCache();
-        startSyncLoop();
         render();
       } catch (error) {
-        if (cached) {
+        const accessDenied = /権限|permission|authorization|not authorized|access denied/i.test(error.message || '');
+        if (accessDenied) clearLocalCache({ silent: true });
+        if (cached && !accessDenied) {
           state.syncStatus = 'error';
           showToast('スプレッドシート同期に失敗。ローカル表示を継続', 'warning');
           render();
@@ -37,7 +39,7 @@
         const timeout = setTimeout(() => {
           if (settled) return;
           settled = true;
-          reject(new Error('サーバー応答がありません。デプロイ直後の再認可、権限、またはApps Scriptの実行ログを確認してください。'));
+          reject(clientError_('SERVER_TIMEOUT', 'サーバー応答がありません。デプロイ直後の再認可、権限、またはApps Scriptの実行ログを確認してください。', false));
         }, SERVER_CALL_TIMEOUT_MS);
         const success = value => {
           if (settled) return;
@@ -49,7 +51,7 @@
           if (settled) return;
           settled = true;
           clearTimeout(timeout);
-          reject(new Error(error && error.message ? error.message : String(error)));
+          reject(parseServerError_(error && error.message ? error.message : String(error)));
         };
         const runner = google.script.run
           .withSuccessHandler(success)
@@ -62,11 +64,43 @@
       });
     }
 
+    function clientError_(code, message, retryable) {
+      const error = new Error(message);
+      error.code = code || 'UNKNOWN';
+      error.retryable = retryable === true;
+      return error;
+    }
+
+    function parseServerError_(rawMessage) {
+      const raw = String(rawMessage || '保存できませんでした。');
+      const match = raw.match(/\[APP:([A-Z0-9_]+):([01])\]\s*(.*)$/s);
+      if (match) return clientError_(match[1], match[3] || raw, match[2] === '1');
+      return clientError_('SERVER_ERROR', raw.replace(/^Error:\s*/, ''), false);
+    }
+
+    async function serverCallWithRetry(name, args, options = {}) {
+      const maxAttempts = Math.max(1, Number(options.maxAttempts) || 2);
+      let attempt = 0;
+      while (attempt < maxAttempts) {
+        attempt += 1;
+        try {
+          return await serverCall(name, ...(args || []));
+        } catch (error) {
+          // Only LOCK_BUSY is known to happen before any write. Retrying generic
+          // timeouts could duplicate a mutation whose response alone was lost.
+          if (error.code !== 'LOCK_BUSY' || attempt >= maxAttempts) throw error;
+          await new Promise(resolve => setTimeout(resolve, 250 * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 150)));
+        }
+      }
+      throw clientError_('SERVER_ERROR', '保存できませんでした。', false);
+    }
+
     function renderSetup() {
       app.className = 'setup-screen';
       app.innerHTML = `
         <form class="setup-card" id="setupForm">
           <h1>初回セットアップ</h1>
+          ${state.setupIncomplete ? '<div class="banner">前回の途中データを引き継ぎ、不足分からセットアップを再開します。</div>' : ''}
           <label class="field">
             <span class="field-label">案件名</span>
             <input class="input" name="projectName" required value="新規案件">
@@ -119,8 +153,8 @@
           });
           applyFullData(data);
           persistLocalCache();
-          startSyncLoop();
           state.setupRequired = false;
+          state.setupIncomplete = false;
           render();
         } catch (error) {
           showToast(error.message, 'error');
@@ -130,25 +164,52 @@
     }
 
     function applyFullData(data, options = {}) {
+      const loadedStatusColumns = (data.statusColumns || []).slice();
+      if (loadedStatusColumns.length && loadedStatusColumns.filter(column => column.isDoneColumn).length !== 1) {
+        throw clientError_('STATUS_DONE_INVARIANT', '完了列の設定が不正なためデータを適用できません。', false);
+      }
       state.nodes = (data.nodes || []).map(normalizeLoadedNode);
       state.members = (data.members || []).slice();
-      state.statusColumns = (data.statusColumns || []).slice().sort(compareSortOrder);
+      state.statusColumns = loadedStatusColumns.sort(compareSortOrder);
       state.dependencies = (data.dependencies || []).slice();
       state.milestones = (data.milestones || []).map(normalizeLoadedMilestone).sort(compareSortOrder);
       state.meetings = (data.meetings || []).map(normalizeLoadedMeeting).sort(compareSortOrder);
       state.commentCounts = data.commentCounts || {};
+      state.slackSettings = Object.assign({}, state.slackSettings, data.slackSettings || {});
       state.currentMember = data.currentMember || null;
       state.currentEmail = data.currentEmail || '';
       state.unregistered = Boolean(data.unregistered && !data.currentMember);
       state.spreadsheetId = data.spreadsheetId || state.spreadsheetId || '';
       state.rootId = data.rootId || '';
+      state.setupIncomplete = false;
       if (!options.fromCache) {
         state.syncStatus = 'synced';
         state.lastSyncAt = new Date().toISOString();
       }
       rebuildIndexes();
+      recoverOwnedDraft_();
       if (!options.fromCache && state.unregistered && !state.joinPromptDismissed && !state.dialog) {
         openJoinDialog({ auto: true });
+      }
+    }
+
+    function recoverOwnedDraft_() {
+      if (!state.currentMember) return;
+      const draft = state.nodes.find(node => node.isDraft && node.draftOwner === state.currentMember.id);
+      if (!draft) {
+        if (state.shellNodeId && !state.nodesById.has(state.shellNodeId)) clearShellTracking();
+        return;
+      }
+      state.shellNodeId = draft.id;
+      state.shellBaseline = detailSnapshotFromNode(draft);
+      if (!state.drawerNodeId) {
+        state.drawerNodeId = draft.id;
+        initializeDetailDraft(draft);
+        state.focusDetailName = true;
+      }
+      if (!state.recoveredDraftIds.has(draft.id)) {
+        state.recoveredDraftIds.add(draft.id);
+        showToast('作成途中のタスクを復元しました', 'warning');
       }
     }
 
@@ -159,6 +220,7 @@
         version: 'local-cache',
         cachedAt: new Date().toISOString(),
         cacheScope: cacheScopeKey(),
+        cacheUser: state.currentEmail,
         spreadsheetId: state.spreadsheetId,
         currentEmail: state.currentEmail,
         currentMember: state.currentMember,
@@ -169,20 +231,30 @@
         dependencies: state.dependencies,
         milestones: state.milestones,
         meetings: state.meetings,
+        slackSettings: state.slackSettings,
         commentCounts: state.commentCounts,
         unregistered: state.unregistered
       };
     }
 
     function persistLocalCache() {
+      if (!state.currentEmail) return;
       try {
         const key = localCacheKey();
         localStorage.setItem(key, JSON.stringify(snapshotForCache()));
         const index = readLocalCacheIndex();
-        index[cacheScopeKey()] = key;
+        index[userCacheScopeKey()] = key;
         localStorage.setItem(LOCAL_CACHE_INDEX_KEY, JSON.stringify(index));
       } catch (error) {
-        state.syncStatus = 'error';
+        try {
+          const reduced = snapshotForCache();
+          reduced.cacheReduced = true;
+          reduced.nodes = reduced.nodes.map(node => Object.assign({}, node, { description: '', deliverable: '', note: '' }));
+          localStorage.setItem(localCacheKey(), JSON.stringify(reduced));
+        } catch (ignored) {
+          // Cache persistence is optional and must not turn a confirmed server save
+          // into a visible sync error.
+        }
       }
     }
 
@@ -191,7 +263,13 @@
         const key = localCacheKey();
         const raw = key ? localStorage.getItem(key) : null;
         const cached = raw ? JSON.parse(raw) : null;
-        return cached && cached.cacheScope === cacheScopeKey() ? cached : null;
+        if (!cached || cached.cacheScope !== cacheScopeKey() || cached.cacheUser !== state.currentEmail) return null;
+        const cachedAt = Date.parse(cached.cachedAt || '');
+        if (!Number.isFinite(cachedAt) || Date.now() - cachedAt > LOCAL_CACHE_TTL_MS) {
+          localStorage.removeItem(key);
+          return null;
+        }
+        return cached;
       } catch (error) {
         return null;
       }
@@ -210,17 +288,28 @@
       return `${location.origin}${location.pathname}`;
     }
 
-    function localCacheKey() {
-      if (state.rootId) return `${LOCAL_CACHE_PREFIX}:${state.rootId}`;
-      const index = readLocalCacheIndex();
-      return index[cacheScopeKey()] || `${LOCAL_CACHE_PREFIX}:scope:${cacheScopeKey()}`;
+    function userCacheScopeKey() {
+      return `${cacheScopeKey()}:${String(state.currentEmail || '').toLowerCase()}`;
     }
 
-    function startSyncLoop() {
-      if (state.syncTimer) clearInterval(state.syncTimer);
-      state.syncTimer = setInterval(() => {
-        syncFromServer({ silent: true });
-      }, SYNC_INTERVAL_MS);
+    function localCacheKey() {
+      const user = encodeURIComponent(String(state.currentEmail || '').toLowerCase());
+      if (state.rootId) return `${LOCAL_CACHE_PREFIX}:${state.rootId}:${user}`;
+      const index = readLocalCacheIndex();
+      return index[userCacheScopeKey()] || `${LOCAL_CACHE_PREFIX}:scope:${encodeURIComponent(userCacheScopeKey())}`;
+    }
+
+    function clearLocalCache(options = {}) {
+      try {
+        const key = localCacheKey();
+        localStorage.removeItem(key);
+        const index = readLocalCacheIndex();
+        delete index[userCacheScopeKey()];
+        localStorage.setItem(LOCAL_CACHE_INDEX_KEY, JSON.stringify(index));
+        if (!options.silent) showToast('このブラウザのローカルキャッシュを削除しました', 'success');
+      } catch (error) {
+        if (!options.silent) showToast('ローカルキャッシュを削除できませんでした', 'error');
+      }
     }
 
     async function syncFromServer(options = {}) {
@@ -245,6 +334,7 @@
         const data = await serverCall('loadAll');
         if (data.setupRequired) {
           state.setupRequired = true;
+          state.setupIncomplete = Boolean(data.setupIncomplete);
           state.currentEmail = data.currentEmail || state.currentEmail || '';
           renderSetup();
           return;
@@ -291,7 +381,10 @@
     }
 
     function applyMutationResult(result) {
-      if (!result) return;
+      if (!result) return false;
+      const touchedNodeIds = Array.isArray(result.nodes)
+        ? result.nodes.map(node => node && node.id).filter(Boolean)
+        : [];
       if (result.ok === false) {
         if (Array.isArray(result.nodes)) mergeNodes(result.nodes);
         rebuildIndexes();
@@ -303,11 +396,13 @@
             action: { type: 'openNode', nodeId: result.nodeId || '' }
           });
         } else {
-          showToast(result.message || '保存できませんでした。', 'error');
+          showToast(result.message || '保存できませんでした。', 'error', { sticky: true });
         }
+        reapplyPendingNodeMutations_(touchedNodeIds);
+        rebuildIndexes();
         persistLocalCache();
         render();
-        return;
+        return false;
       }
       if (Array.isArray(result.deletedNodeIds)) {
         const deleted = new Set(result.deletedNodeIds);
@@ -334,16 +429,24 @@
         state.comments.set(result.comment.nodeId, comments);
         state.commentCounts[result.comment.nodeId] = comments.length;
       }
-      if (result.commentCounts) state.commentCounts = result.commentCounts;
+      if (result.commentCounts) state.commentCounts = Object.assign({}, state.commentCounts, result.commentCounts);
+      if (result.slackSettings) state.slackSettings = Object.assign({}, state.slackSettings, result.slackSettings);
+      rebuildIndexes();
+      reapplyPendingNodeMutations_(touchedNodeIds);
       rebuildIndexes();
       syncDetailDraftAfterMutation();
-      state.syncStatus = 'synced';
-      state.lastSyncAt = new Date().toISOString();
+      if (hasPendingMutations()) {
+        state.syncStatus = 'pending';
+      } else {
+        state.syncStatus = 'synced';
+        state.lastSyncAt = new Date().toISOString();
+      }
       persistLocalCache();
       if (result.rescheduledCount) {
         showToast(`後続タスク${result.rescheduledCount}件の日程を自動調整しました`, 'success');
       }
       render();
+      return true;
     }
 
     function updateDetailDraftBaseAfterConflict(result) {
@@ -362,6 +465,7 @@
     function queueBackgroundMutation(scope, apiName, payload, optimisticApply, rollback, options = {}) {
       if (!state.currentMember && apiName !== 'setupProject' && apiName !== 'joinAsMember') {
         showToast('メンバー未登録のため保存不可', 'error');
+        if (options.onFinally) options.onFinally();
         return Promise.resolve();
       }
       payload = payload || {};
@@ -375,11 +479,21 @@
       persistLocalCache();
       render();
 
-      const previous = state.backgroundChains.get(scope) || Promise.resolve();
-      const chain = previous.catch(() => {}).then(async () => {
-        const result = await serverCall(apiName, payload);
+      const affectsNodes = ['upsertMember', 'deleteMember', 'upsertStatusColumn', 'deleteStatusColumn', 'addDependency', 'deleteDependency'].includes(apiName);
+      const scopePrevious = state.backgroundChains.get(scope) || Promise.resolve();
+      const nodePrevious = affectsNodes && state.nodeMutationChain ? state.nodeMutationChain : Promise.resolve();
+      const previous = affectsNodes
+        ? Promise.all([scopePrevious.catch(() => {}), nodePrevious.catch(() => {})])
+        : scopePrevious.catch(() => {});
+      const chain = previous.then(async () => {
+        const result = await serverCallWithRetry(apiName, [payload]);
         if (options.beforeApply) options.beforeApply(result);
-        applyMutationResult(result);
+        const applied = applyMutationResult(result);
+        if (options.onResult) options.onResult(result);
+        if (!applied) {
+          if (rollback) rollback(result);
+          return result;
+        }
         if (options.onSuccess) options.onSuccess(result);
         return result;
       }).catch(error => {
@@ -388,18 +502,24 @@
         syncDetailDraftAfterMutation();
         state.syncStatus = 'error';
         persistLocalCache();
-        showToast(error.message, 'error');
+        showToast(error.message, 'error', { sticky: true });
         if (options.onError) options.onError(error);
         render();
       }).finally(() => {
         state.pendingMutationCount = Math.max(0, state.pendingMutationCount - 1);
         if (state.backgroundChains.get(scope) === chain) state.backgroundChains.delete(scope);
+        if (affectsNodes && state.nodeMutationChain === chain) state.nodeMutationChain = null;
         if (state.pendingMutationCount || state.savingNodeIds.size) {
           state.syncStatus = 'pending';
+        } else if (state.syncStatus === 'pending') {
+          state.syncStatus = 'synced';
+          state.lastSyncAt = new Date().toISOString();
         }
+        if (options.onFinally) options.onFinally();
         render();
       });
       state.backgroundChains.set(scope, chain);
+      if (affectsNodes) state.nodeMutationChain = chain;
       return chain;
     }
 
@@ -410,7 +530,12 @@
         if (!children.has(parentId)) children.set(parentId, []);
         children.get(parentId).push(node.id);
       });
-      const doneColumn = state.statusColumns.find(column => column.isDoneColumn) || state.statusColumns[0] || {};
+      state.childrenByParent = new Map();
+      children.forEach((ids, parentId) => {
+        state.childrenByParent.set(parentId, ids.map(id => state.nodesById.get(id)).filter(Boolean));
+      });
+      const doneColumns = state.statusColumns.filter(column => column.isDoneColumn);
+      const doneColumn = doneColumns.length === 1 ? doneColumns[0] : {};
       const doneColumnId = doneColumn.id || '';
       const progressMemo = new Map();
       const boundsMemo = new Map();

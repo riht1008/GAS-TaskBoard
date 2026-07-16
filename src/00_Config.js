@@ -2,9 +2,10 @@
  * Shared configuration and sheet schema.
  */
 
-var APP_VERSION = '1.0.0';
-var LOCK_WAIT_MS = 5000;
+var APP_VERSION = '1.1.0';
+var LOCK_WAIT_MS = 15000;
 var DAY_MS = 24 * 60 * 60 * 1000;
+var DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
 
 var SHEET = {
   NODES: 'Nodes',
@@ -38,10 +39,12 @@ HEADERS[SHEET.NODES] = [
   'Deliverable',
   'Note',
   'Progress',
-  'IncludeInWbs'
+  'IncludeInWbs',
+  'DraftOwner',
+  'DraftExpiresAt'
 ];
 HEADERS[SHEET.MEMBERS] = ['MemberId', 'Name', 'Email', 'Color', 'Company'];
-HEADERS[SHEET.STATUS_COLUMNS] = ['ColumnId', 'Name', 'SortOrder', 'IsDoneColumn', 'Color'];
+HEADERS[SHEET.STATUS_COLUMNS] = ['ColumnId', 'Name', 'SortOrder', 'IsDoneColumn', 'Color', 'IsInProgressColumn'];
 HEADERS[SHEET.DEPENDENCIES] = ['DependencyId', 'PredecessorNodeId', 'SuccessorNodeId'];
 HEADERS[SHEET.COMMENTS] = ['CommentId', 'NodeId', 'AuthorId', 'AuthorName', 'Timestamp', 'Text', 'ParentCommentId', 'Mentions'];
 HEADERS[SHEET.ACTIVITY_LOG] = ['LogId', 'NodeId', 'Field', 'OldValue', 'NewValue', 'NewValueIsDone', 'ChangedAt', 'ChangedBy'];
@@ -61,7 +64,9 @@ TEXT_COLUMNS[SHEET.NODES] = [
   'UpdatedAt',
   'UpdatedBy',
   'DeletedAt',
-  'DeletedBy'
+  'DeletedBy',
+  'DraftOwner',
+  'DraftExpiresAt'
 ];
 TEXT_COLUMNS[SHEET.MEMBERS] = ['MemberId', 'Email', 'Color'];
 TEXT_COLUMNS[SHEET.STATUS_COLUMNS] = ['ColumnId', 'Color'];

@@ -5,7 +5,7 @@
 function withLock_(fn) {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(LOCK_WAIT_MS)) {
-    throw new Error('他の操作が進行中です。しばらくして再試行してください。');
+    throw appError_('LOCK_BUSY', '他の操作が進行中です。しばらくして再試行してください。', true);
   }
   try {
     const result = fn();
@@ -16,12 +16,13 @@ function withLock_(fn) {
   }
 }
 
-function requireCurrentMember_() {
+function requireCurrentMember_(members) {
   const email = getCurrentEmail_();
   if (!email) {
     throw new Error('ログインユーザーのメールアドレスを取得できません。');
   }
-  const member = readObjects_(SHEET.MEMBERS).find(function (m) {
+  const source = Array.isArray(members) ? members : readObjects_(SHEET.MEMBERS);
+  const member = source.find(function (m) {
     return normalizeEmail_(m.Email) === email;
   });
   if (!member) {
@@ -62,8 +63,7 @@ function validateStatusId_(statusId, statusColumns) {
 }
 
 function doneStatusColumnId_(statusColumns) {
-  const done = (statusColumns || []).find(function (column) { return isTrue_(column.IsDoneColumn); }) || (statusColumns || [])[0] || {};
-  return cleanString_(done.ColumnId);
+  return assertExactlyOneDone_(statusColumns);
 }
 
 function normalizeManualProgress_(value, allowBlank) {
@@ -184,25 +184,65 @@ function defaultStatusColor_(name, isDoneColumn) {
   return '#DDE3DF';
 }
 
-function ensureExactlyOneDone_(columns) {
-  const done = columns.filter(function (c) { return isTrue_(c.IsDoneColumn); });
-  if (done.length === 1) {
-    columns.forEach(function (c) { c.IsDoneColumn = cleanString_(c.ColumnId) === cleanString_(done[0].ColumnId); });
-    return;
+function assertExactlyOneDone_(columns) {
+  const done = (columns || []).filter(function (column) { return isTrue_(column.IsDoneColumn); });
+  if (done.length !== 1) {
+    throw appError_(
+      'STATUS_DONE_INVARIANT',
+      '完了列の設定が不正です。StatusColumns の IsDoneColumn=true を厳密に1件にしてください。',
+      false
+    );
   }
-  if (!columns.length) {
-    throw new Error('ステータス列がありません。');
-  }
-  if (done.length > 1) {
-    const keeper = done[0].ColumnId;
-    columns.forEach(function (c) { c.IsDoneColumn = cleanString_(c.ColumnId) === cleanString_(keeper); });
-    return;
-  }
-  columns[columns.length - 1].IsDoneColumn = true;
+  return cleanString_(done[0].ColumnId);
+}
+
+function appError_(code, message, retryable) {
+  const safeCode = cleanString_(code) || 'UNKNOWN';
+  const error = new Error('[APP:' + safeCode + ':' + (retryable ? '1' : '0') + '] ' + cleanString_(message));
+  error.code = safeCode;
+  error.retryable = retryable === true;
+  return error;
 }
 
 function activeNodes_(nodes) {
   return nodes.filter(function (n) { return !cleanString_(n.DeletedAt); });
+}
+
+function validateNodeTree_(nodes) {
+  const source = nodes || [];
+  const nodesById = {};
+  source.forEach(function (node) {
+    const nodeId = cleanString_(node.NodeId);
+    if (!nodeId) {
+      throw appError_('NODE_TREE_INVALID', 'NodeIdが空の有効ノードがあります。Nodesシートを確認してください。', false);
+    }
+    if (nodesById[nodeId]) {
+      throw appError_('NODE_TREE_INVALID', 'NodeIdが重複しています: ' + nodeId, false);
+    }
+    nodesById[nodeId] = node;
+  });
+  const roots = source.filter(function (node) { return !cleanString_(node.ParentId); });
+  if (roots.length !== 1) {
+    throw appError_('NODE_TREE_INVALID', '有効なルートノードは厳密に1件必要です。現在: ' + roots.length + '件', false);
+  }
+  source.forEach(function (node) {
+    const nodeId = cleanString_(node.NodeId);
+    const parentId = cleanString_(node.ParentId);
+    if (parentId && !nodesById[parentId]) {
+      throw appError_('NODE_TREE_INVALID', '親ノードが存在しないノードがあります: ' + nodeId, false);
+    }
+    const seen = {};
+    let current = node;
+    while (current && cleanString_(current.ParentId)) {
+      const currentId = cleanString_(current.NodeId);
+      if (seen[currentId]) {
+        throw appError_('NODE_TREE_INVALID', 'ノード階層に循環があります: ' + nodeId, false);
+      }
+      seen[currentId] = true;
+      current = nodesById[cleanString_(current.ParentId)];
+    }
+  });
+  return true;
 }
 
 function visibleDependencies_(dependencies, nodesById) {
@@ -215,6 +255,12 @@ function nodeHasDependency_(nodeId, dependencies, nodesById) {
   return visibleDependencies_(dependencies, nodesById).some(function (dep) {
     return cleanString_(dep.PredecessorNodeId) === nodeId || cleanString_(dep.SuccessorNodeId) === nodeId;
   });
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    validateNodeTree_: validateNodeTree_
+  };
 }
 
 function hasSchedule_(node) {

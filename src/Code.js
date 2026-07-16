@@ -7,10 +7,9 @@
  */
 
 function doGet() {
-  return HtmlService.createTemplateFromFile('Index')
-    .evaluate()
-    .setTitle('タスク管理')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  const template = HtmlService.createTemplateFromFile('Index');
+  template.bootstrapEmail = getCurrentEmail_();
+  return template.evaluate().setTitle('タスク管理');
 }
 
 function include(filename) {
@@ -22,13 +21,21 @@ function include(filename) {
 
 function loadAll() {
   ensureSchema_();
-  const rows = readAll_();
+  let rows = readAll_();
+  if (hasExpiredDraftNodes_(rows.nodes)) {
+    rows = withLock_(function () {
+      const freshRows = readAll_();
+      cleanupExpiredDraftNodes_(freshRows);
+      return readAll_();
+    });
+  }
   const activeNodes = activeNodes_(rows.nodes);
-  const setupRequired = activeNodes.length === 0 && rows.members.length === 0 && rows.statusColumns.length === 0;
+  const setupRequired = rows.nodes.length === 0;
   if (setupRequired) {
     return {
       ok: true,
       setupRequired: true,
+      setupIncomplete: rows.members.length > 0 || rows.statusColumns.length > 0,
       currentEmail: getCurrentEmail_(),
       spreadsheetId: SpreadsheetApp.getActive().getId(),
       version: APP_VERSION
@@ -37,6 +44,9 @@ function loadAll() {
   if (activeNodes.length === 0 || rows.members.length === 0 || rows.statusColumns.length === 0) {
     throw new Error('初期データが不完全です。Nodes / Members / StatusColumns を確認してください。');
   }
+  validateNodeTree_(activeNodes);
+  assertExactlyOneDone_(rows.statusColumns);
+  validateDependencySet_(activeNodes, rows.dependencies);
   return makeFullPayload_(rows);
 }
 
@@ -45,8 +55,8 @@ function setupProject(payload) {
   return withLock_(function () {
     ensureSchema_();
     const rows = readAll_();
-    if (rows.nodes.length || rows.members.length || rows.statusColumns.length) {
-      throw new Error('初回セットアップは空の案件でのみ実行できます。');
+    if (rows.nodes.length) {
+      throw new Error('初回セットアップはルートノードが未作成の案件でのみ実行できます。');
     }
 
     const email = getCurrentEmail_();
@@ -55,48 +65,61 @@ function setupProject(payload) {
     }
 
     const now = nowIso_();
-    const memberId = newId_();
+    let member = rows.members.find(function (item) { return normalizeEmail_(item.Email) === email; });
+    const memberId = member ? cleanString_(member.MemberId) : newId_();
     const memberName = cleanString_(payload.memberName) || email.split('@')[0];
     const memberColor = normalizeColor_(payload.color) || '#1E6F5C';
-    const statusTodo = newId_();
-    const statusDoing = newId_();
-    const statusDone = newId_();
     const rootId = newId_();
     const projectName = cleanString_(payload.projectName) || '新規案件';
 
-    appendObject_(SHEET.MEMBERS, {
-      MemberId: memberId,
-      Name: memberName,
-      Email: email,
-      Color: memberColor,
-      Company: ''
+    if (!member) {
+      member = appendObject_(SHEET.MEMBERS, {
+        MemberId: memberId,
+        Name: memberName,
+        Email: email,
+        Color: memberColor,
+        Company: ''
+      });
+      rows.members.push(member);
+    }
+
+    const defaultStatuses = [
+      { Name: '未着手', SortOrder: 1000, IsDoneColumn: false, IsInProgressColumn: false, Color: '#DCE5DE' },
+      { Name: '進行中', SortOrder: 2000, IsDoneColumn: false, IsInProgressColumn: true, Color: '#CFE0F5' },
+      { Name: '完了', SortOrder: 3000, IsDoneColumn: true, IsInProgressColumn: false, Color: '#CFE8DE' }
+    ];
+    const missingStatuses = defaultStatuses.filter(function (seed) {
+      return !rows.statusColumns.some(function (column) { return cleanString_(column.Name) === seed.Name; });
+    }).map(function (seed) {
+      return {
+        ColumnId: newId_(),
+        Name: seed.Name,
+        SortOrder: seed.SortOrder,
+        IsDoneColumn: false,
+        Color: seed.Color,
+        IsInProgressColumn: seed.IsInProgressColumn
+      };
     });
-    appendObject_(SHEET.STATUS_COLUMNS, {
-      ColumnId: statusTodo,
-      Name: '未着手',
-      SortOrder: 1000,
-      IsDoneColumn: false,
-      Color: '#DCE5DE'
+    rows.statusColumns = rows.statusColumns.concat(appendObjects_(SHEET.STATUS_COLUMNS, missingStatuses));
+    const doneColumn = rows.statusColumns.find(function (column) { return cleanString_(column.Name) === '完了'; });
+    if (!doneColumn) {
+      throw new Error('初期完了列を作成できませんでした。');
+    }
+    rows.statusColumns.forEach(function (column) {
+      column.IsDoneColumn = cleanString_(column.ColumnId) === cleanString_(doneColumn.ColumnId);
     });
-    appendObject_(SHEET.STATUS_COLUMNS, {
-      ColumnId: statusDoing,
-      Name: '進行中',
-      SortOrder: 2000,
-      IsDoneColumn: false,
-      Color: '#CFE0F5'
+    const inProgressColumn = rows.statusColumns.find(function (column) { return cleanString_(column.Name) === '進行中'; });
+    rows.statusColumns.forEach(function (column) {
+      column.IsInProgressColumn = !!inProgressColumn && cleanString_(column.ColumnId) === cleanString_(inProgressColumn.ColumnId);
     });
-    appendObject_(SHEET.STATUS_COLUMNS, {
-      ColumnId: statusDone,
-      Name: '完了',
-      SortOrder: 3000,
-      IsDoneColumn: true,
-      Color: '#CFE8DE'
-    });
+    writeObjects_(SHEET.STATUS_COLUMNS, rows.statusColumns);
+    const todoColumn = rows.statusColumns.find(function (column) { return cleanString_(column.Name) === '未着手'; }) || sortByOrder_(rows.statusColumns)[0];
+
     appendObject_(SHEET.NODES, {
       NodeId: rootId,
       ParentId: '',
       Name: projectName,
-      StatusColumnId: statusTodo,
+      StatusColumnId: todoColumn.ColumnId,
       AssigneeIds: memberId,
       Priority: 'Mid',
       StartDate: '',
@@ -111,13 +134,24 @@ function setupProject(payload) {
       Deliverable: '',
       Note: '',
       Progress: '',
-      IncludeInWbs: true
+      IncludeInWbs: true,
+      DraftOwner: '',
+      DraftExpiresAt: ''
     });
 
-    return makeFullPayload_(readAll_());
+    const completedRows = readAll_();
+    assertExactlyOneDone_(completedRows.statusColumns);
+    return makeFullPayload_(completedRows);
   });
 }
 
 function ping() {
   return { ok: true, version: APP_VERSION, email: getCurrentEmail_() };
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    setupProject: setupProject,
+    loadAll: loadAll
+  };
 }
