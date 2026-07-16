@@ -67,4 +67,11 @@ clasp push
 `main` への push 時に GitHub Actions (`.github/workflows/analyze-code.yml`) が自動更新します。
 
 <!-- LANGUAGES BREAKDOWN START -->
+```
+[ LANGUAGES BREAKDOWN ]
+
+JavaScript   --> 5,624 lines
+
+[ TOTAL LINES OF CODE: 5,624 ]
+```
 <!-- LANGUAGES BREAKDOWN END -->
