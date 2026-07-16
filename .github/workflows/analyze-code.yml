@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch: # Allows manual trigger
+
+permissions:
+  contents: write
 
 jobs:
   count-lines:
