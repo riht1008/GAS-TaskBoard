@@ -1380,6 +1380,21 @@
       line-height: 1.55;
     }
 
+    .slack-legacy-notice {
+      display: grid;
+      gap: var(--space-2);
+    }
+
+    .slack-legacy-notice strong {
+      color: var(--color-text-primary);
+    }
+
+    .slack-legacy-notice a {
+      width: max-content;
+      color: var(--color-accent-hover);
+      font-weight: var(--weight-medium);
+    }
+
     .slack-notification-toggle {
       display: grid;
       gap: var(--space-1);
@@ -1393,23 +1408,9 @@
       font-size: var(--text-sm);
     }
 
-    .slack-variable-details {
-      border-top: 1px solid var(--color-border);
-      padding-top: var(--space-3);
-    }
-
-    .slack-variable-details summary {
-      width: max-content;
-      color: var(--color-accent-hover);
-      font-size: var(--text-sm);
-      font-weight: var(--weight-medium);
-      cursor: pointer;
-    }
-
     .slack-variable-grid {
       display: grid;
       gap: 1px;
-      margin-top: var(--space-3);
       overflow: hidden;
       border: 1px solid var(--color-border);
       border-radius: var(--radius-md);
@@ -1419,13 +1420,25 @@
     .slack-variable-row {
       min-width: 0;
       display: grid;
-      grid-template-columns: minmax(170px, 0.85fr) 82px minmax(0, 1.4fr);
+      grid-template-columns: 42px minmax(160px, 0.9fr) 82px minmax(130px, 1.1fr) minmax(150px, 1.2fr);
       gap: var(--space-3);
       align-items: center;
       padding: var(--space-2) var(--space-3);
       color: var(--color-text-secondary);
       background: var(--color-surface);
       font-size: var(--text-xs);
+    }
+
+    .slack-variable-header {
+      color: var(--color-text-tertiary);
+      background: var(--color-canvas);
+      font-weight: var(--weight-medium);
+    }
+
+    .slack-variable-order {
+      color: var(--color-text-tertiary);
+      font-variant-numeric: tabular-nums;
+      text-align: center;
     }
 
     .slack-variable-row code {
@@ -1442,14 +1455,110 @@
       background: var(--color-canvas);
     }
 
-    .slack-workflow-guide ol {
+    .slack-variable-example {
+      color: var(--color-text-tertiary);
+      overflow-wrap: anywhere;
+    }
+
+    .slack-app-guide,
+    .slack-workflow-setup {
+      border-top: 1px solid var(--color-border);
+      padding-top: var(--space-4);
+    }
+
+    .slack-app-guide summary {
+      width: max-content;
+      color: var(--color-accent-hover);
+      font-size: var(--text-sm);
+      font-weight: var(--weight-medium);
+      cursor: pointer;
+    }
+
+    .slack-app-guide[open] {
       display: grid;
-      gap: var(--space-2);
-      margin: 0;
-      padding-left: 22px;
+      gap: var(--space-3);
+    }
+
+    .slack-workflow-setup {
+      display: grid;
+      gap: var(--space-4);
+      scroll-margin-top: var(--space-6);
+    }
+
+    .slack-setup-heading {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: var(--space-3);
+    }
+
+    .slack-setup-heading > div {
+      display: grid;
+      gap: var(--space-1);
+    }
+
+    .slack-setup-heading strong {
+      color: var(--color-text-primary);
+    }
+
+    .slack-setup-heading span,
+    .slack-workflow-footer-help > span {
       color: var(--color-text-secondary);
       font-size: var(--text-sm);
       line-height: 1.55;
+    }
+
+    .slack-setup-count {
+      flex: 0 0 auto;
+      padding: 3px var(--space-2);
+      border-radius: var(--radius-pill);
+      color: var(--color-accent-hover) !important;
+      background: var(--color-accent-subtle);
+      font-size: var(--text-xs) !important;
+      font-weight: var(--weight-medium);
+    }
+
+    .slack-setup-steps {
+      display: grid;
+      gap: var(--space-2);
+      margin: 0;
+      padding-left: 24px;
+      color: var(--color-text-secondary);
+      font-size: var(--text-sm);
+      line-height: 1.65;
+    }
+
+    .slack-message-example {
+      display: grid;
+      gap: var(--space-2);
+      padding: var(--space-4);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      color: var(--color-text-secondary);
+      background: var(--color-canvas);
+      font-size: var(--text-sm);
+      line-height: 1.65;
+    }
+
+    .slack-insert-token {
+      display: inline-block;
+      padding: 0 var(--space-1);
+      border: 1px solid color-mix(in srgb, var(--color-accent) 28%, var(--color-border));
+      border-radius: 4px;
+      color: var(--color-accent-hover);
+      background: var(--color-accent-subtle);
+      font-family: var(--font-mono);
+      font-size: var(--text-xs);
+      font-weight: var(--weight-medium);
+      vertical-align: baseline;
+    }
+
+    .slack-workflow-footer-help {
+      display: grid;
+      gap: var(--space-2);
+      padding: var(--space-4);
+      border-radius: var(--radius-md);
+      background: var(--color-canvas);
     }
 
     .slack-help-link {
@@ -3799,11 +3908,24 @@
       }
 
       .slack-variable-row {
-        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-columns: 32px minmax(0, 1fr) auto;
       }
 
-      .slack-variable-row > :last-child {
-        grid-column: 1 / -1;
+      .slack-variable-header {
+        display: none;
+      }
+
+      .slack-variable-row > :nth-child(4),
+      .slack-variable-row > :nth-child(5) {
+        grid-column: 2 / -1;
+      }
+
+      .slack-setup-heading {
+        display: grid;
+      }
+
+      .slack-setup-count {
+        width: max-content;
       }
 
       .detail-date-grid {

@@ -275,7 +275,7 @@
       const options = mention.options || [];
       if (!options.length) return '';
       return `
-        <div class="mention-menu" style="--mention-left:${Number(mention.left) || 0}px;--mention-top:${Number(mention.top) || 0}px" role="listbox">
+        <div class="mention-menu" data-preserve-scroll="overlay:mention-menu" style="--mention-left:${Number(mention.left) || 0}px;--mention-top:${Number(mention.top) || 0}px" role="listbox">
           ${options.map((member, index) => `
             <button class="mention-option ${index === mention.selectedIndex ? 'selected' : ''}" type="button" data-action="select-mention" data-member-id="${h(member.id)}" role="option" aria-selected="${index === mention.selectedIndex ? 'true' : 'false'}">
               ${renderAvatar(member)}
@@ -705,7 +705,7 @@
                   <span>Slack通知</span><small>通知方法と送信先</small>
                 </button>
               </aside>
-              <section class="project-settings-content" role="tabpanel">
+              <section class="project-settings-content" role="tabpanel" data-preserve-scroll="dialog:project-settings:${h(tab)}">
                 <div class="project-settings-panel-head">
                   <h2>${h(panelMeta.title)}</h2>
                   <p>${h(panelMeta.description)}</p>
@@ -722,7 +722,7 @@
       const configured = Boolean(config.configured);
       const legacy = Boolean(config.legacy);
       const stateClass = legacy ? 'legacy' : configured ? 'configured' : 'empty';
-      const stateLabel = legacy ? '旧形式・再設定が必要' : configured ? '設定済み' : '未設定';
+      const stateLabel = legacy ? '従来設定で動作中' : configured ? '設定済み' : '未設定';
       const inputLabel = configured ? '新しいURLに置き換える' : 'Webhook URL';
       return `
         <div class="slack-endpoint-field">
@@ -737,7 +737,14 @@
             <span>${configured ? '保存中のURL' : '保存中のURLはありません'}</span>
             ${configured ? `<code>${h(config.maskedUrl || '保存済み')}</code>` : ''}
           </div>
-          ${legacy ? '<div class="slack-inline-warning">以前の1変数方式です。下のURLを保存し直すと、新しい変数方式へ切り替わります。</div>' : ''}
+          ${legacy ? `
+            <div class="slack-inline-warning slack-legacy-notice">
+              <strong>TaskBoard更新前に登録されたWorkflowで通知しています</strong>
+              <span>現在は、完成した通知文を <code>text</code> という1項目にまとめて送っています。通知はそのまま続きますが、タスク名やステータスなどをSlack側で個別に配置する現在の設定はまだ使われません。</span>
+              <span>切り替える場合は、Slack側で下記の変数を登録したWorkflowを作成または更新し、Slackが発行したURLをこの欄に入力して保存してください。</span>
+              ${config.guideId ? `<a href="#${h(config.guideId)}">${h(config.guideLabel || '現在の設定手順を見る')}</a>` : ''}
+            </div>
+          ` : ''}
           <label class="field">
             <span class="field-label">${h(inputLabel)}</span>
             <input class="input" type="password" autocomplete="off" data-draft-scope="projectSettings" data-draft-field="${h(config.field)}" value="${h(config.value || '')}" placeholder="${h(config.placeholder)}" ${config.disabled ? 'disabled' : ''}>
@@ -755,13 +762,54 @@
     function renderSlackWorkflowVariables(items) {
       return `
         <div class="slack-variable-grid">
-          ${items.map(item => `
+          <div class="slack-variable-row slack-variable-header" aria-hidden="true">
+            <span>順番</span><span>変数名</span><span>型</span><span>受け取る内容</span><span>値の例</span>
+          </div>
+          ${items.map((item, index) => `
             <div class="slack-variable-row">
+              <span class="slack-variable-order">${index + 1}</span>
               <code>${h(item.name)}</code>
               <span class="slack-variable-type">${h(item.type || 'テキスト')}</span>
               <span>${h(item.description)}</span>
+              <span class="slack-variable-example">${h(item.example || '')}</span>
             </div>
           `).join('')}
+        </div>
+      `;
+    }
+
+    function renderSlackWorkflowMessageExample(lines) {
+      return `
+        <div class="slack-message-example" aria-label="Slackメッセージ本文の設定例">
+          ${lines.map(parts => `<div>${parts.map(part => typeof part === 'string'
+            ? h(part)
+            : `<span class="slack-insert-token">${h(part.variable)}</span>`).join('')}</div>`).join('')}
+        </div>
+      `;
+    }
+
+    function renderSlackWorkflowSetupGuide(config) {
+      return `
+        <div class="slack-workflow-setup" id="${h(config.id)}">
+          <div class="slack-setup-heading">
+            <div><strong>${h(config.title)}の作り方</strong><span>変数名は大文字・小文字とアンダースコアまで、表のとおりに入力してください。</span></div>
+            <span class="slack-setup-count">全${config.variables.length}変数</span>
+          </div>
+          <ol class="slack-setup-steps">
+            <li>Slackで「その他」→「ツール」→「ワークフロー」を開き、「新規」→「ワークフローを構築」を選びます。</li>
+            <li>開始方法で「Webhookから」を選びます。表示されない場合は、Slackのプランまたはワークスペース権限を管理者に確認してください。</li>
+            <li>次の表の変数を上から順に追加します。送信処理上は順番に依存しませんが、この順番に揃えると2本のWorkflowを確認しやすくなります。</li>
+          </ol>
+          ${renderSlackWorkflowVariables(config.variables)}
+          <ol class="slack-setup-steps" start="4">
+            <li>変数の登録を完了し、「チャンネルにメッセージを送信」ステップを追加して投稿先を選びます。</li>
+            <li>メッセージ本文を作ります。下の緑色の項目は文字として入力せず、Slackの「変数を挿入」から同名の変数を選んでください。太字・箇条書き・リンクなどはSlackの本文編集画面で付けます。</li>
+          </ol>
+          ${renderSlackWorkflowMessageExample(config.messageLines)}
+          <ol class="slack-setup-steps" start="6">
+            <li>Workflowを公開し、Slackが発行した <code>/triggers/...</code> のWebhook URLをコピーします。</li>
+            <li>コピーしたURLを、この手順の上にある「${h(config.endpointLabel)}」へ貼り付け、「Slack通知設定を保存」→「接続テスト」の順に実行します。</li>
+          </ol>
         </div>
       `;
     }
@@ -780,23 +828,24 @@
       // script fragment as a line comment while evaluating Index.html.
       const incomingWebhookPlaceholder = ['https:', '', 'hooks.slack.com/services/...'].join('/');
       const workflowWebhookPlaceholder = ['https:', '', 'hooks.slack.com/triggers/...'].join('/');
+      const incomingWebhookHelpUrl = ['https:', '', 'api.slack.com/messaging/webhooks'].join('/');
       const workflowHelpUrl = ['https:', '', 'slack.com/help/articles/360041352714-Build-a-workflow--Create-a-workflow-that-starts-outside-of-Slack'].join('/');
       return `
         <form id="projectSettingsForm" class="slack-settings-form">
           <section class="slack-settings-section slack-delivery-section">
             <div class="slack-section-head">
-              <div><h3>通知方法</h3><p>会社の運用に合う方を選んでください。保存済みの別方式のURLは、明示的に解除するまで残ります。</p></div>
+              <div><h3>通知方法</h3><p>通知の文面と投稿先を、TaskBoardとSlackのどちらで管理するかを選びます。保存済みの別方式のURLは、明示的に解除するまで残ります。</p></div>
             </div>
             <div class="slack-mode-grid">
               <button class="slack-mode-card ${deliveryMode === 'app' ? 'active' : ''}" type="button" data-action="set-slack-delivery-mode" data-mode="app" aria-pressed="${deliveryMode === 'app'}" ${submitting ? 'disabled' : ''}>
-                <span class="slack-mode-card-top"><strong>Slackアプリ方式</strong><span class="slack-mode-tag">高機能</span></span>
-                <span>Incoming Webhookを使用。装飾や複数人へのメンションをアプリ側で組み立てます。</span>
-                <small>Slackアプリの作成・社内申請が可能な場合</small>
+                <span class="slack-mode-card-top"><strong>Slackアプリ方式</strong><span class="slack-mode-tag">Incoming Webhook</span></span>
+                <span>TaskBoardで文面と装飾を設定し、1つのWebhookでSlackへ投稿します。</span>
+                <small>通知の見た目をTaskBoard側で管理したい場合</small>
               </button>
               <button class="slack-mode-card ${deliveryMode === 'workflow' ? 'active' : ''}" type="button" data-action="set-slack-delivery-mode" data-mode="workflow" aria-pressed="${deliveryMode === 'workflow'}" ${submitting ? 'disabled' : ''}>
-                <span class="slack-mode-card-top"><strong>Workflow Builder方式</strong><span class="slack-mode-tag subtle">申請不要向け</span></span>
-                <span>Slack標準のワークフローを使用。見た目はSlack側で設定します。</span>
-                <small>カスタムSlackアプリを作れない場合</small>
+                <span class="slack-mode-card-top"><strong>Workflow Builder方式</strong><span class="slack-mode-tag subtle">Workflow Builder</span></span>
+                <span>TaskBoardから変数を渡し、投稿先とメッセージをSlack側で設定します。</span>
+                <small>通知の見た目をSlack側で管理したい場合</small>
               </button>
             </div>
           </section>
@@ -822,6 +871,15 @@
                 disabled: submitting,
                 testing: testingApp
               })}
+              <details class="slack-app-guide">
+                <summary>Incoming Webhook URLの準備方法</summary>
+                <ol class="slack-setup-steps">
+                  <li>Slack APIでアプリを作成し、「Incoming Webhooks」を有効にします。</li>
+                  <li>「Add New Webhook to Workspace」から投稿先チャンネルを選び、アクセスを許可します。</li>
+                  <li>発行された <code>/services/...</code> のWebhook URLを上の欄へ貼り付け、「Slack通知設定を保存」→「接続テスト」の順に実行します。</li>
+                </ol>
+                <a class="slack-help-link" href="${h(incomingWebhookHelpUrl)}" target="_blank" rel="noopener noreferrer">Slack公式のIncoming Webhook手順を開く ${icon('arrow-right')}</a>
+              </details>
             </section>
             <section class="slack-settings-section">
               <div class="slack-section-head"><div><h3>通知内容</h3><p>Slackへ送る文面をこのアプリで管理します。</p></div></div>
@@ -847,8 +905,8 @@
             </section>
           ` : `
             <div class="slack-workflow-note">
-              <strong>ステータス用とメンション用の2本を作成します</strong>
-              <span>Slack側でメッセージを組み立てるため、用途ごとに受け取る変数が異なります。</span>
+              <strong>Slack側で2つのWorkflowを作成します</strong>
+              <span>①ステータス変更用と②コメントメンション用です。それぞれ受け取る変数が異なるため、発行されたURLを同じ番号の入力欄へ保存してください。</span>
             </div>
             <section class="slack-settings-section">
               <div class="slack-section-head">
@@ -865,20 +923,32 @@
                 placeholder: workflowWebhookPlaceholder,
                 target: 'workflowStatus',
                 disabled: submitting,
-                testing: testingStatus
+                testing: testingStatus,
+                guideId: 'slackWorkflowStatusGuide',
+                guideLabel: 'ステータス変更Workflowの設定手順を見る'
               })}
-              <details class="slack-variable-details">
-                <summary>Slackで作る変数を見る</summary>
-                ${renderSlackWorkflowVariables([
-                  { name: 'notification_title', description: '通知タイトル' },
-                  { name: 'task_name', description: 'タスク名' },
-                  { name: 'parent_path', description: '親タスクの階層' },
-                  { name: 'before_status', description: '変更前ステータス' },
-                  { name: 'after_status', description: '変更後ステータス' },
-                  { name: 'actor_name', description: '操作した人' },
-                  { name: 'web_app_url', description: 'このアプリのURL' }
-                ])}
-              </details>
+              ${renderSlackWorkflowSetupGuide({
+                id: 'slackWorkflowStatusGuide',
+                title: 'ステータス変更Workflow',
+                endpointLabel: 'ステータス通知のWorkflow URL',
+                variables: [
+                  { name: 'notification_title', description: '通知タイトル', example: 'タスクのステータスが変更されました' },
+                  { name: 'task_name', description: 'タスク名', example: '見積書を作成' },
+                  { name: 'parent_path', description: '親タスクの階層', example: '営業準備 / 見積対応' },
+                  { name: 'before_status', description: '変更前ステータス', example: '未着手' },
+                  { name: 'after_status', description: '変更後ステータス', example: '進行中' },
+                  { name: 'actor_name', description: '操作した人', example: '鈴木 太郎' },
+                  { name: 'web_app_url', description: 'TaskBoardを開くURL', example: 'script.google.com/...' }
+                ],
+                messageLines: [
+                  [{ variable: 'notification_title' }],
+                  ['タスク: ', { variable: 'task_name' }],
+                  ['親パス: ', { variable: 'parent_path' }],
+                  ['変更: ', { variable: 'before_status' }, ' → ', { variable: 'after_status' }],
+                  ['実行者: ', { variable: 'actor_name' }],
+                  ['タスクを開く: ', { variable: 'web_app_url' }]
+                ]
+              })}
             </section>
             <section class="slack-settings-section">
               <div class="slack-section-head">
@@ -897,33 +967,40 @@
                 target: 'workflowMention',
                 disabled: submitting,
                 testDisabled: !currentMemberMapped,
-                testing: testingMention
+                testing: testingMention,
+                guideId: 'slackWorkflowMentionGuide',
+                guideLabel: 'コメントメンションWorkflowの設定手順を見る'
               })}
-              <details class="slack-variable-details">
-                <summary>Slackで作る変数を見る</summary>
-                ${renderSlackWorkflowVariables([
-                  { name: 'notification_title', description: '通知タイトル' },
-                  { name: 'task_name', description: 'タスク名' },
-                  { name: 'parent_path', description: '親タスクの階層' },
-                  { name: 'mentioned_user_id', type: 'ユーザーID', description: 'メンションする本人。必ず「ユーザーID」型で作成' },
-                  { name: 'mentioned_user_name', description: 'メンション対象者名' },
-                  { name: 'actor_name', description: 'コメント投稿者' },
-                  { name: 'comment_text', description: 'コメント本文' },
-                  { name: 'web_app_url', description: 'このアプリのURL' }
-                ])}
-              </details>
+              ${renderSlackWorkflowSetupGuide({
+                id: 'slackWorkflowMentionGuide',
+                title: 'コメントメンションWorkflow',
+                endpointLabel: 'メンション通知のWorkflow URL',
+                variables: [
+                  { name: 'notification_title', description: '通知タイトル', example: 'コメントでメンションされました' },
+                  { name: 'task_name', description: 'タスク名', example: '見積書を作成' },
+                  { name: 'parent_path', description: '親タスクの階層', example: '営業準備 / 見積対応' },
+                  { name: 'mentioned_user_id', type: 'ユーザーID', description: '通知するSlack本人', example: 'U012ABCDEF' },
+                  { name: 'mentioned_user_name', description: 'メンション対象者名', example: '佐藤 花子' },
+                  { name: 'actor_name', description: 'コメント投稿者', example: '鈴木 太郎' },
+                  { name: 'comment_text', description: 'コメント本文', example: '内容を確認してください' },
+                  { name: 'web_app_url', description: 'TaskBoardを開くURL', example: 'script.google.com/...' }
+                ],
+                messageLines: [
+                  [{ variable: 'notification_title' }],
+                  ['宛先: ', { variable: 'mentioned_user_id' }, '（', { variable: 'mentioned_user_name' }, '）'],
+                  ['タスク: ', { variable: 'task_name' }],
+                  ['親パス: ', { variable: 'parent_path' }],
+                  ['投稿者: ', { variable: 'actor_name' }],
+                  ['コメント:'],
+                  [{ variable: 'comment_text' }],
+                  ['タスクを開く: ', { variable: 'web_app_url' }]
+                ]
+              })}
             </section>
-            <section class="slack-settings-section slack-workflow-guide">
-              <div class="slack-section-head"><div><h3>Workflow Builderでの設定</h3><p>どちらのワークフローも同じ流れで作成します。</p></div></div>
-              <ol>
-                <li>Slackの「その他 → ツール → ワークフロー」で「Webhookから」を選ぶ</li>
-                <li>上の一覧どおりに変数を追加する。<code>mentioned_user_id</code> だけは「ユーザーID」型、ほかは「テキスト」型</li>
-                <li>「チャンネルにメッセージを送信」を追加し、本文へ各変数を挿入して装飾する</li>
-                <li>公開後の <code>/triggers/...</code> URLを、対応する欄へ貼り付ける</li>
-              </ol>
-              <div class="slack-inline-warning"><code>{text}</code> という1つの変数は使いません。太字・リンク・メンションはSlack側のメッセージ編集画面で設定します。</div>
-              <a class="slack-help-link" href="${h(workflowHelpUrl)}" target="_blank" rel="noopener noreferrer">Slack公式の手順を開く ${icon('arrow-right')}</a>
-            </section>
+            <div class="slack-workflow-footer-help">
+              <span>変数は入れ子にせず、画面の表にある名前をそのまま登録してください。Webhook URLは公開Issueやログへ貼らないでください。</span>
+              <a class="slack-help-link" href="${h(workflowHelpUrl)}" target="_blank" rel="noopener noreferrer">Slack公式のWebhook Workflow手順を開く ${icon('arrow-right')}</a>
+            </div>
           `}
 
           ${deliveryMode ? `
@@ -1079,7 +1156,7 @@
             ${config.plain ? '' : `<span class="dropdown-chevron">${icon('chevron-down')}</span>`}
           </button>
           ${state.openDropdown === id ? `
-            <div class="dropdown-menu" role="listbox">
+            <div class="dropdown-menu" role="listbox" data-preserve-scroll="dropdown:${h(id)}">
               ${options.map(option => renderDropdownOption(id, option, config.multi ? selected.includes(option.value) : option.value === selected)).join('')}
             </div>
           ` : ''}

@@ -4,6 +4,10 @@
         state.renderDeferred = true;
         return;
       }
+      // Most state changes rebuild the shell and patch open floating panels. Keep
+      // explicitly named scroll regions stable across incidental renders such as
+      // sync responses, save start/completion, and notification state updates.
+      const preservedScroll = capturePreservedScrollPositions(document);
       clearInlineDropdownPortal();
       removeCreatePreview();
       state.renderCache = {};
@@ -53,6 +57,7 @@
       mountInlineDropdownPortal();
       syncModalAccessibility_();
       renderToasts();
+      restorePreservedScrollPositions(document, preservedScroll);
       flushPendingNodeScroll();
     }
 
@@ -86,6 +91,41 @@
       state.ganttScrollLeft = right.scrollLeft;
       state.ganttScrollTop = right.scrollTop;
       if (leftBody) leftBody.style.transform = `translateY(${-right.scrollTop}px)`;
+    }
+
+    function capturePreservedScrollPositions(root) {
+      const snapshot = {};
+      if (!root || typeof root.querySelectorAll !== 'function') return snapshot;
+      root.querySelectorAll('[data-preserve-scroll]').forEach(element => {
+        const key = element.dataset && element.dataset.preserveScroll;
+        if (!key) return;
+        snapshot[key] = {
+          left: Number(element.scrollLeft) || 0,
+          top: Number(element.scrollTop) || 0
+        };
+      });
+      return snapshot;
+    }
+
+    function restorePreservedScrollPositions(root, snapshot) {
+      if (!root || !snapshot || typeof root.querySelectorAll !== 'function') return;
+      root.querySelectorAll('[data-preserve-scroll]').forEach(element => {
+        const key = element.dataset && element.dataset.preserveScroll;
+        const position = key ? snapshot[key] : null;
+        if (!position) return;
+        element.scrollLeft = Math.max(0, Number(position.left) || 0);
+        element.scrollTop = Math.max(0, Number(position.top) || 0);
+      });
+    }
+
+    function markLocalScrollRegions(root) {
+      if (!root || typeof root.querySelectorAll !== 'function') return;
+      ['.modal-body', '.drawer-body', '.detail-main', '.detail-sidebar', '.code-block'].forEach(selector => {
+        root.querySelectorAll(selector).forEach((element, index) => {
+          if (element.dataset.preserveScroll) return;
+          element.dataset.preserveScroll = `local:${selector}:${index}`;
+        });
+      });
     }
 
     function ganttTodayScrollLeft(right) {
@@ -192,9 +232,13 @@
         root.innerHTML = html;
         return;
       }
+      markLocalScrollRegions(current);
+      const preservedScroll = capturePreservedScrollPositions(current);
       withFocusPreserved(current, () => {
         current.innerHTML = fresh.innerHTML;
       });
+      markLocalScrollRegions(current);
+      restorePreservedScrollPositions(current, preservedScroll);
     }
 
     function withFocusPreserved(root, mutate) {
@@ -484,7 +528,7 @@
           ${filteredEmpty ? renderFilteredEmptyNotice() : ''}
           <div class="board-layout ${state.kanbanMemberRailCollapsed ? 'member-rail-collapsed' : ''}">
             ${state.kanbanMemberRailCollapsed ? '' : renderMemberRail(visibleCards)}
-            <div class="columns">
+            <div class="columns" data-preserve-scroll="view:kanban:columns">
               ${state.statusColumns.map(column => renderKanbanColumn(column, visibleCards)).join('')}
             </div>
           </div>
@@ -495,7 +539,7 @@
     function renderMemberRail(visibleCards) {
       const activeNodes = Array.isArray(visibleCards) ? visibleCards : [];
       return `
-        <aside class="member-rail">
+        <aside class="member-rail" data-preserve-scroll="view:kanban:members">
           <div class="rail-head">
             <div class="rail-title">担当者</div>
             <button class="button ghost icon compact" type="button" data-action="toggle-member-rail" title="担当者一覧を隠す">${icon('x')}</button>
@@ -534,7 +578,7 @@
               <button class="button compact ghost icon" data-action="edit-status" data-column-id="${h(column.id)}" title="列を編集" ${state.currentMember ? '' : 'disabled'}>${icon('edit')}</button>
             </div>
           </header>
-          <div class="column-body ${state.dragOverColumnId === column.id ? 'drag-over' : ''}" data-drop-column="${h(column.id)}">
+          <div class="column-body ${state.dragOverColumnId === column.id ? 'drag-over' : ''}" data-drop-column="${h(column.id)}" data-preserve-scroll="view:kanban:column:${h(column.id)}">
             ${cards.length ? cards.map(renderCard).join('') : `<button class="empty-drop" data-action="new-node" data-parent-id="${h(state.rootId)}" data-status-id="${h(column.id)}" aria-label="タスクを追加" ${state.currentMember ? '' : 'disabled'}>${icon('plus')}</button>`}
           </div>
         </article>
@@ -576,7 +620,7 @@
       }
       return `
         <section class="view">
-          <div class="table-wrap">
+          <div class="table-wrap" data-preserve-scroll="view:list:table">
             <table>
               <thead>
                 <tr>
