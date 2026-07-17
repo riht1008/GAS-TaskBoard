@@ -192,7 +192,7 @@ function deleteStatusColumn(payload) {
     if (used) {
       throw new Error('この列に所属するノードがあります。先に別の列へ移動してください。');
     }
-    deleteRow_(SHEET.STATUS_COLUMNS, column.__row);
+    deleteRow_(SHEET.STATUS_COLUMNS, column.__row, column.ColumnId);
     const columns = rows.statusColumns.filter(function (item) { return cleanString_(item.ColumnId) !== columnId; });
     assertExactlyOneDone_(columns);
     return { ok: true, statusColumns: clientStatusColumns_(columns) };

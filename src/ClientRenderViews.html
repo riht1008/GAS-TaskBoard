@@ -652,6 +652,7 @@
       const depth = taskDepthOf(node.id);
       const showAdd = canCreateChild(node);
       const inlineScope = `inline:${node.id}`;
+      const inlineName = inlineDraftValue(node.id, 'name', node.name || '');
       const progressValue = inlineProgressValue(node);
       const progressTone = progressColor(progressValue) || 'var(--color-border)';
       return `
@@ -661,7 +662,7 @@
               <span class="row-drag-handle" draggable="${state.currentMember ? 'true' : 'false'}" data-node-drag-handle="${h(node.id)}" title="${state.currentMember ? 'ドラッグして並び替え' : 'メンバー登録後に並び替えできます'}">${icon('grip')}</span>
               <span class="indent" style="--tree-depth:${depth}"></span>
               ${node.hasChildren ? `<button class="button ghost icon compact" data-toggle-node="${h(node.id)}">${icon(state.collapsed.has(node.id) ? 'chevron-right' : 'chevron-down')}</button>` : '<span class="button icon compact" aria-hidden="true"></span>'}
-              <input class="inline-cell-input inline-name-input ${node.name ? '' : 'placeholder'}" data-inline-node="${h(node.id)}" data-inline-field="name" value="${h(node.name || '')}" placeholder="新しいタスク" ${state.currentMember ? '' : 'readonly'}>
+              <input class="inline-cell-input inline-name-input ${inlineName ? '' : 'placeholder'}" data-inline-node="${h(node.id)}" data-inline-field="name" value="${h(inlineName)}" placeholder="新しいタスク" ${state.currentMember ? '' : 'readonly'}>
               ${renderWbsExcludedChip(node)}
               <button class="button ghost icon compact" data-open-node="${h(node.id)}" title="編集">${icon('edit')}</button>
               ${showAdd ? `<button class="button ghost icon compact row-add-child" data-action="create-child-shell" data-parent-id="${h(node.id)}" title="子タスクを追加">${icon('plus')}</button>` : ''}

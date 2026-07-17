@@ -9,14 +9,37 @@ function getComments(nodeId, options) {
   if (!byId_(active, 'NodeId')[cleanString_(nodeId)]) {
     throw new Error('ノードが見つかりません。');
   }
-  const comments = rows.comments
+  const indexComments = rows.comments
     .filter(function (c) { return cleanString_(c.NodeId) === cleanString_(nodeId); })
     .sort(function (a, b) { return cleanString_(a.Timestamp).localeCompare(cleanString_(b.Timestamp)); })
-    .map(clientComment_);
+    .map(function (comment) {
+      return {
+        id: cleanString_(comment.CommentId),
+        timestamp: cleanString_(comment.Timestamp),
+        parentCommentId: cleanString_(comment.ParentCommentId),
+        __row: comment.__row
+      };
+    });
   if (!options || typeof options !== 'object') {
-    return comments;
+    return readObjectsAtRows_(SHEET.COMMENTS, indexComments.map(function (comment) { return comment.__row; }))
+      .sort(function (a, b) { return cleanString_(a.Timestamp).localeCompare(cleanString_(b.Timestamp)); })
+      .map(clientComment_);
   }
-  return commentPage_(comments, options);
+  const page = commentPage_(indexComments, options);
+  const selectedIndex = {};
+  page.comments.forEach(function (comment, index) { selectedIndex[comment.id] = index; });
+  const selectedRows = rows.comments.filter(function (comment) {
+    return Object.prototype.hasOwnProperty.call(selectedIndex, cleanString_(comment.CommentId));
+  });
+  const hydratedById = {};
+  readObjectsAtRows_(SHEET.COMMENTS, selectedRows.map(function (comment) { return comment.__row; })).forEach(function (comment) {
+    hydratedById[cleanString_(comment.CommentId)] = clientComment_(comment);
+  });
+  if (page.comments.some(function (comment) { return !hydratedById[comment.id]; })) {
+    throw appError_('ROW_IDENTITY_MISMATCH', 'コメントの行位置が読込中に変わりました。もう一度読み込んでください。', true);
+  }
+  page.comments = page.comments.map(function (comment) { return hydratedById[comment.id]; }).filter(Boolean);
+  return page;
 }
 
 function commentPage_(comments, options) {
@@ -264,7 +287,7 @@ function deleteMember(payload) {
       }
     });
     writeObjects_(SHEET.NODES, affected);
-    deleteRow_(SHEET.MEMBERS, member.__row);
+    deleteRow_(SHEET.MEMBERS, member.__row, member.MemberId);
 
     const freshRows = readMemberSnapshot_();
     return {
@@ -278,6 +301,7 @@ function deleteMember(payload) {
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
+    getComments: getComments,
     addComment: addComment,
     commentPage_: commentPage_,
     joinAsMember: joinAsMember,

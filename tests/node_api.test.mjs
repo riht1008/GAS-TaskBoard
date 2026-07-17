@@ -66,15 +66,89 @@ global.makeMutationPayload_ = (rows, affectedIds, requestId, extra) => Object.as
 }, extra || {});
 global.clientNodes_ = (rows, affectedIds) => global.activeNodes_(rows.nodes).filter(node => affectedIds.includes(node.NodeId));
 global.makeConflictPayload_ = (_rows, nodeId, requestId) => ({ ok: false, code: 'CONFLICT', nodeId, requestId });
+global.appError_ = (code, message) => Object.assign(new Error(message), { code });
+global.validateNodeTree_ = () => true;
+global.normalizeManualProgress_ = (value, allowBlank) => {
+  if (allowBlank && String(value ?? '').trim() === '') return '';
+  const numeric = Number(value);
+  if (![0, 15, 30, 45, 60, 75, 90, 100].includes(numeric)) throw new Error('進捗率が不正です。');
+  return numeric;
+};
+global.validateStatusId_ = (id, columns) => {
+  if (!columns.some(column => column.ColumnId === id)) throw new Error('ステータス列が見つかりません。');
+  return id;
+};
+global.requireName_ = value => {
+  const name = String(value || '').trim();
+  if (!name) throw new Error('名称を入力してください。');
+  return name;
+};
+global.normalizeAssigneeIds_ = (ids, members) => ids.filter(id => members.some(member => member.MemberId === id));
+global.normalizePriority_ = value => value || 'Mid';
+global.normalizeIncludeInWbs_ = value => value !== false;
+global.normalizeSchedule_ = (startDate, endDate) => ({ startDate: startDate || '', endDate: endDate || '' });
+global.normalizeActualDates_ = (startDate, endDate) => ({ startDate: startDate || '', endDate: endDate || '' });
 
 const require = createRequire(import.meta.url);
-const { rollupParentStatuses_, restoreNode, deleteNode, cleanupExpiredDraftNodes_ } = require('../src/01_NodeApi.js');
+const { rollupParentStatuses_, restoreNode, deleteNode, cleanupExpiredDraftNodes_, applyNodePatch_, nodeBaseVersionMatches_ } = require('../src/01_NodeApi.js');
 
 const statusColumns = [
   { ColumnId: 'todo', Name: '未着手', SortOrder: 1000, IsDoneColumn: false, IsInProgressColumn: false },
   { ColumnId: 'doing', Name: '進行中', SortOrder: 2000, IsDoneColumn: false, IsInProgressColumn: true },
   { ColumnId: 'done', Name: '完了', SortOrder: 3000, IsDoneColumn: true, IsInProgressColumn: false }
 ];
+
+test('existing node mutations require an explicit matching base version', () => {
+  const node = { UpdatedAt: 'v2', DraftOwner: '' };
+  const actor = { MemberId: 'actor-1' };
+  assert.throws(() => nodeBaseVersionMatches_({}, node, actor, false), error => error.code === 'BASE_VERSION_REQUIRED');
+  assert.equal(nodeBaseVersionMatches_({ baseUpdatedAt: 'v1' }, node, actor, false), false);
+  assert.equal(nodeBaseVersionMatches_({ baseUpdatedAt: 'v2' }, node, actor, false), true);
+});
+
+test('only the owner may save a draft shell without a base version', () => {
+  const node = { UpdatedAt: 'v2', DraftOwner: 'actor-1' };
+  assert.equal(nodeBaseVersionMatches_({}, node, { MemberId: 'actor-1' }, true), true);
+  assert.throws(
+    () => nodeBaseVersionMatches_({}, node, { MemberId: 'actor-2' }, true),
+    error => error.code === 'BASE_VERSION_REQUIRED'
+  );
+});
+
+test('applyNodePatch changes only supplied fields and keeps unrelated values', () => {
+  const node = {
+    NodeId: 'leaf', ParentId: 'root', Name: '元の名前', StatusColumnId: 'todo',
+    AssigneeIds: 'm1', Priority: 'Mid', Description: '変更前', Progress: 15
+  };
+  const rows = {
+    nodes: [{ NodeId: 'root', ParentId: '' }, node],
+    members: [{ MemberId: 'm1' }],
+    statusColumns
+  };
+
+  applyNodePatch_(node, { description: '変更後' }, rows);
+
+  assert.equal(node.Description, '変更後');
+  assert.equal(node.Name, '元の名前');
+  assert.equal(node.AssigneeIds, 'm1');
+  assert.equal(node.Progress, 15);
+});
+
+test('applyNodePatch enforces leaf progress and done-status invariants', () => {
+  const leaf = { NodeId: 'leaf', ParentId: 'root', StatusColumnId: 'todo', Progress: 90 };
+  const rows = {
+    nodes: [{ NodeId: 'root', ParentId: '' }, leaf],
+    members: [],
+    statusColumns
+  };
+  applyNodePatch_(leaf, { progress: 100 }, rows);
+  assert.equal(leaf.StatusColumnId, 'done');
+  assert.equal(leaf.Progress, 100);
+
+  const parent = { NodeId: 'parent', ParentId: 'root', StatusColumnId: 'todo', Progress: '' };
+  rows.nodes = [{ NodeId: 'root', ParentId: '' }, parent, { NodeId: 'child', ParentId: 'parent', StatusColumnId: 'todo' }];
+  assert.throws(() => applyNodePatch_(parent, { progress: 15 }, rows), /親タスク/);
+});
 
 function rowsWithChildren(childStatuses, parentStatus = 'todo') {
   return {

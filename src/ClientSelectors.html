@@ -128,12 +128,16 @@
     function ganttScale(rows) {
       const scheduled = rows.filter(node => node.displayStartDate && node.displayEndDate);
       const today = localTodayDay();
-      const scaleDays = scheduled
+      let scaleDays = scheduled
         .flatMap(node => [dateToDay(node.displayStartDate), dateToDay(node.displayEndDate)])
         .concat(ganttTimelineAnchorDates())
         .concat(today);
       const filterRange = dateFilterRange();
       if (filterRange) scaleDays.push(filterRange.start, filterRange.end);
+      const hardMin = dateToDay(PROJECT_DATE_MIN);
+      const hardMax = dateToDay(PROJECT_DATE_MAX);
+      scaleDays = scaleDays.filter(day => Number.isFinite(day) && day >= hardMin && day <= hardMax);
+      if (!scaleDays.length) scaleDays = [today];
       let startDay = Math.min(...scaleDays);
       let endDay = Math.max(...scaleDays);
       const padding = state.ganttZoom === 'day'
@@ -143,6 +147,13 @@
           : { past: 90, future: 365 };
       startDay -= padding.past;
       endDay += padding.future;
+      startDay = Math.max(hardMin, startDay);
+      endDay = Math.min(hardMax, endDay);
+      if (endDay - startDay + 1 > MAX_GANTT_DISPLAY_DAYS) {
+        startDay = Math.max(hardMin, today - 365);
+        endDay = Math.min(hardMax, startDay + MAX_GANTT_DISPLAY_DAYS - 1);
+        startDay = Math.max(hardMin, endDay - MAX_GANTT_DISPLAY_DAYS + 1);
+      }
       const baseDayWidth = state.ganttZoom === 'day' ? 18 : state.ganttZoom === 'week' ? 10 : 4;
       const scaleFactor = nearestGanttScaleFactor(state.ganttScaleFactor);
       const dayWidth = Math.max(3, Math.round(baseDayWidth * scaleFactor));

@@ -1029,6 +1029,23 @@
 
     let renderTimer = null;
 
+    function inlineDraftKey(nodeId, field) {
+      return `${nodeId}:${field}`;
+    }
+
+    function inlineDraftValue(nodeId, field, fallback) {
+      const key = inlineDraftKey(nodeId, field);
+      return state.inlineDrafts.has(key) ? state.inlineDrafts.get(key) : fallback;
+    }
+
+    function setInlineDraft(nodeId, field, value) {
+      state.inlineDrafts.set(inlineDraftKey(nodeId, field), value);
+    }
+
+    function clearInlineDraft(nodeId, field) {
+      state.inlineDrafts.delete(inlineDraftKey(nodeId, field));
+    }
+
     function scheduleRender() {
       if (state.textComposing) {
         state.renderDeferred = true;

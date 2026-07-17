@@ -493,6 +493,9 @@
     function bindInlineControls() {
       document.querySelectorAll('[data-inline-node][data-inline-field]').forEach(element => {
         bindTextCompositionGuard(element);
+        bindOnce(element, 'input', event => {
+          setInlineDraft(event.currentTarget.dataset.inlineNode, event.currentTarget.dataset.inlineField, event.currentTarget.value);
+        });
         bindOnce(element, 'keydown', event => {
           if (event.key !== 'Enter' || event.shiftKey || event.isComposing || state.textComposing) return;
           event.preventDefault();
@@ -500,7 +503,11 @@
         });
         bindOnce(element, 'blur', event => {
           if (state.textComposing) return;
-          saveInlineNodeField(event.currentTarget.dataset.inlineNode, event.currentTarget.dataset.inlineField, event.currentTarget.value);
+          const nodeId = event.currentTarget.dataset.inlineNode;
+          const field = event.currentTarget.dataset.inlineField;
+          const value = event.currentTarget.value;
+          clearInlineDraft(nodeId, field);
+          saveInlineNodeField(nodeId, field, value);
         });
       });
     }

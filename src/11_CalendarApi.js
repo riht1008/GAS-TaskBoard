@@ -29,7 +29,7 @@ function saveCalendarOverrides(payload) {
     plan.deletes.slice().sort(function (a, b) {
       return Number(b.__row) - Number(a.__row);
     }).forEach(function (row) {
-      deleteRow_(SHEET.CALENDAR_OVERRIDES, row.__row);
+      deleteRow_(SHEET.CALENDAR_OVERRIDES, row.__row, row.Date);
     });
 
     return {
@@ -48,6 +48,7 @@ function normalizeCalendarOverridePayload_(payload) {
   if (endDate < startDate) {
     throw new Error('終了日は開始日以降にしてください。');
   }
+  assertProjectDateRange_(startDate, endDate, 'カレンダー対象期間');
   const dateCount = dateToDay_(endDate) - dateToDay_(startDate) + 1;
   if (dateCount > CALENDAR_OVERRIDE_MAX_DAYS) {
     throw new Error('一度に設定できる期間は366日以内です。');

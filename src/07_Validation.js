@@ -134,6 +134,7 @@ function normalizeSchedule_(startDate, endDate) {
   if (dateToDay_(start) > dateToDay_(end)) {
     throw new Error('開始日は終了日以前にしてください。');
   }
+  assertProjectDateRange_(start, end, '日程');
   return { startDate: start, endDate: end };
 }
 
@@ -155,7 +156,23 @@ function normalizeActualDates_(startDate, endDate) {
   if (start && end && dateToDay_(start) > dateToDay_(end)) {
     throw new Error('実績終了日は実績着手日以降にしてください。');
   }
+  assertProjectDateRange_(start, end, '実績日');
   return { startDate: start, endDate: end };
+}
+
+function assertProjectDateRange_(startDate, endDate, label) {
+  const start = cleanString_(startDate);
+  const end = cleanString_(endDate || start);
+  if (!start && !end) return;
+  const minDate = typeof PROJECT_DATE_MIN !== 'undefined' ? PROJECT_DATE_MIN : '2000-01-01';
+  const maxDate = typeof PROJECT_DATE_MAX !== 'undefined' ? PROJECT_DATE_MAX : '2100-12-31';
+  const maxDays = typeof MAX_SCHEDULE_DAYS !== 'undefined' ? MAX_SCHEDULE_DAYS : 3660;
+  if (start < minDate || start > maxDate || end < minDate || end > maxDate) {
+    throw new Error((label || '日付') + 'は ' + minDate + '〜' + maxDate + ' の範囲で入力してください。');
+  }
+  if (dateToDay_(end) - dateToDay_(start) + 1 > maxDays) {
+    throw new Error((label || '期間') + 'は' + maxDays + '日以内にしてください。');
+  }
 }
 
 function scheduleWouldBeClearedWithDependencies_(node, dependencies, nodesById) {
@@ -289,7 +306,9 @@ function nodeHasDependency_(nodeId, dependencies, nodesById) {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     validateNodeTree_: validateNodeTree_,
+    normalizeSchedule_: normalizeSchedule_,
     normalizeActualDates_: normalizeActualDates_,
+    assertProjectDateRange_: assertProjectDateRange_,
     normalizeSlackUserId_: normalizeSlackUserId_
   };
 }

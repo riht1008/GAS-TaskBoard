@@ -1,0 +1,41 @@
+name: Quality checks
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check server-side JavaScript syntax
+        run: |
+          for file in src/*.js; do
+            node --check "$file"
+          done
+
+      - name: Check client fragment JavaScript syntax
+        run: |
+          for file in src/Client*.html; do
+            node --check --input-type=commonjs < "$file"
+          done
+
+      - name: Run tests
+        run: node --test tests/*.test.mjs
+
+      - name: Check whitespace errors
+        run: git diff --check "$(git hash-object -t tree /dev/null)" HEAD

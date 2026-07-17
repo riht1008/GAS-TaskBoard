@@ -9,6 +9,9 @@ function readAll_(options) {
     return map;
   }, {}) : null;
   function shouldRead(sheetName) {
+    if (sheetName === SHEET.COMMENTS && !selected && options.includeComments !== true) {
+      return false;
+    }
     if (sheetName === SHEET.ACTIVITY_LOG && !options.includeActivityLog && !selected) {
       return false;
     }
@@ -25,6 +28,7 @@ function readAll_(options) {
     meetings: shouldRead(SHEET.MEETINGS) ? readObjects_(SHEET.MEETINGS) : [],
     calendarOverrides: shouldRead(SHEET.CALENDAR_OVERRIDES) ? readObjects_(SHEET.CALENDAR_OVERRIDES) : []
   };
+  rows.commentCounts = options.includeCommentCounts === true ? readCommentCounts_() : null;
   rows.__loadedSheets = {};
   Object.keys(HEADERS).forEach(function (sheetName) {
     rows.__loadedSheets[sheetName] = shouldRead(sheetName);
@@ -39,9 +43,10 @@ function readNodeSnapshot_() {
 }
 
 function readCommentSnapshot_() {
-  return readAll_({
-    sheets: [SHEET.NODES, SHEET.MEMBERS, SHEET.COMMENTS]
-  });
+  const rows = readAll_({ sheets: [SHEET.NODES, SHEET.MEMBERS] });
+  rows.comments = readCommentIndex_();
+  rows.__loadedSheets[SHEET.COMMENTS] = true;
+  return rows;
 }
 
 function readStatusSnapshot_() {
@@ -172,6 +177,17 @@ function applyRowTextFormats_(sheetName, sheet, rowNumber, rowCount) {
 }
 
 function readObjects_(sheetName) {
+  const readable = readableSheet_(sheetName);
+  const sheet = readable.sheet;
+  const headers = readable.headers;
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) {
+    return [];
+  }
+  return objectsFromValues_(sheetName, headers, sheet.getRange(2, 1, lastRow - 1, headers.length).getValues(), 2);
+}
+
+function readableSheet_(sheetName) {
   const sheet = SpreadsheetApp.getActive().getSheetByName(sheetName);
   const headers = HEADERS[sheetName];
   if (!sheet) {
@@ -187,24 +203,118 @@ function readObjects_(sheetName) {
       false
     );
   }
-  const lastRow = sheet.getLastRow();
-  if (lastRow <= 1) {
-    return [];
-  }
-  const values = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
+  return { sheet: sheet, headers: headers };
+}
+
+function objectsFromValues_(sheetName, headers, values, startRow) {
   const rows = [];
   values.forEach(function (row, i) {
     const hasValue = row.some(function (cell) { return cleanString_(cell) !== ''; });
     if (!hasValue) {
       return;
     }
-    const obj = { __row: i + 2 };
+    const obj = { __row: i + startRow };
     headers.forEach(function (h, index) {
       obj[h] = normalizeCellValue_(sheetName, h, row[index]);
     });
+    obj.__originalValues = {};
+    headers.forEach(function (header) { obj.__originalValues[header] = obj[header]; });
     rows.push(obj);
   });
   return rows;
+}
+
+function readSelectedColumns_(sheetName, selectedHeaders) {
+  const readable = readableSheet_(sheetName);
+  const sheet = readable.sheet;
+  const headers = readable.headers;
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return [];
+  const rowCount = lastRow - 1;
+  const columns = {};
+  (selectedHeaders || []).forEach(function (header) {
+    const index = headers.indexOf(header);
+    if (index < 0) throw new Error(sheetName + ' シートに ' + header + ' 列がありません。');
+    columns[header] = sheet.getRange(2, index + 1, rowCount, 1).getValues();
+  });
+  const rows = [];
+  for (let offset = 0; offset < rowCount; offset += 1) {
+    const obj = { __row: offset + 2 };
+    let hasValue = false;
+    selectedHeaders.forEach(function (header) {
+      obj[header] = normalizeCellValue_(sheetName, header, columns[header][offset][0]);
+      if (cleanString_(obj[header])) hasValue = true;
+    });
+    if (hasValue) rows.push(obj);
+  }
+  return rows;
+}
+
+function readCommentIndex_() {
+  return readSelectedColumns_(SHEET.COMMENTS, ['CommentId', 'NodeId', 'Timestamp', 'ParentCommentId']);
+}
+
+function readCommentCounts_() {
+  const counts = {};
+  readSelectedColumns_(SHEET.COMMENTS, ['NodeId']).forEach(function (row) {
+    const nodeId = cleanString_(row.NodeId);
+    if (nodeId) counts[nodeId] = (counts[nodeId] || 0) + 1;
+  });
+  return counts;
+}
+
+function readObjectsAtRows_(sheetName, rowNumbers) {
+  const readable = readableSheet_(sheetName);
+  const sheet = readable.sheet;
+  const headers = readable.headers;
+  const selected = {};
+  (rowNumbers || []).forEach(function (rowNumber) {
+    const number = Number(rowNumber);
+    if (Number.isInteger(number) && number >= 2) selected[number] = true;
+  });
+  const ordered = Object.keys(selected).map(Number).sort(function (a, b) { return a - b; });
+  if (!ordered.length) return [];
+  let ranges = coalescedRowRanges_(ordered, 25);
+  if (ranges.length > 12) ranges = [{ start: ordered[0], end: ordered[ordered.length - 1] }];
+  const rows = [];
+  ranges.forEach(function (range) {
+    const values = sheet.getRange(range.start, 1, range.end - range.start + 1, headers.length).getValues();
+    objectsFromValues_(sheetName, headers, values, range.start).forEach(function (row) {
+      if (selected[row.__row]) rows.push(row);
+    });
+  });
+  return rows;
+}
+
+function readObjectsMatchingColumn_(sheetName, header, expectedValue) {
+  return readObjectsMatchingColumnValues_(sheetName, header, [expectedValue]);
+}
+
+function readObjectsMatchingColumnValues_(sheetName, header, expectedValues) {
+  const expected = {};
+  (expectedValues || []).forEach(function (value) {
+    const key = cleanString_(value);
+    if (key) expected[key] = true;
+  });
+  const matches = readSelectedColumns_(sheetName, [header]).filter(function (row) {
+    return !!expected[cleanString_(row[header])];
+  });
+  return readObjectsAtRows_(sheetName, matches.map(function (row) { return row.__row; })).filter(function (row) {
+    return !!expected[cleanString_(row[header])];
+  });
+}
+
+function coalescedRowRanges_(rowNumbers, maxGap) {
+  const ranges = [];
+  (rowNumbers || []).forEach(function (rowNumber) {
+    const last = ranges[ranges.length - 1];
+    if (!last || rowNumber - last.end > maxGap + 1) {
+      ranges.push({ start: rowNumber, end: rowNumber });
+    } else {
+      last.end = rowNumber;
+    }
+  });
+  return ranges;
 }
 
 function normalizeCellValue_(sheetName, header, value) {
@@ -219,7 +329,8 @@ function normalizeCellValue_(sheetName, header, value) {
   if (typeof value === 'boolean' || typeof value === 'number') {
     return value;
   }
-  return cleanString_(value);
+  const text = cleanString_(value);
+  return /^'[=+\-@]/.test(text) ? text.slice(1) : text;
 }
 
 function isDateOnlyHeader_(header) {
@@ -317,10 +428,7 @@ function writeObject_(sheetName, obj) {
   if (!obj || !obj.__row) {
     throw new Error('書き込み対象の行番号がありません。');
   }
-  const sheet = SpreadsheetApp.getActive().getSheetByName(sheetName);
-  const headers = HEADERS[sheetName];
-  applyRowTextFormats_(sheetName, sheet, obj.__row, 1);
-  sheet.getRange(obj.__row, 1, 1, headers.length).setValues([headers.map(function (h) { return sheetValue_(obj[h]); })]);
+  writeObjects_(sheetName, [obj]);
 }
 
 function writeObjects_(sheetName, rows) {
@@ -339,13 +447,53 @@ function writeObjects_(sheetName, rows) {
   consecutiveRowBlocks_(ordered).forEach(function (block) {
     const start = block[0];
     const rowCount = block.length;
+    const currentValues = readAndAssertRowIdentities_(sheetName, sheet, block, byRow);
     const values = block.map(function (rowNumber) {
       const row = byRow[rowNumber];
-      return headers.map(function (header) { return sheetValue_(row[header]); });
+      return headers.map(function (header, columnIndex) {
+        const original = row.__originalValues;
+        if (original && sameSheetValue_(row[header], original[header])) {
+          return currentValues[rowNumber][columnIndex];
+        }
+        return sheetValue_(row[header]);
+      });
     });
     applyRowTextFormats_(sheetName, sheet, start, rowCount);
     sheet.getRange(start, 1, rowCount, headers.length).setValues(values);
   });
+}
+
+function readAndAssertRowIdentities_(sheetName, sheet, rowNumbers, byRow) {
+  const headers = HEADERS[sheetName];
+  const keyHeader = PRIMARY_KEY_HEADER[sheetName];
+  const keyColumn = headers.indexOf(keyHeader) + 1;
+  if (!keyHeader || keyColumn <= 0) {
+    throw new Error(sheetName + ' シートの主キー定義がありません。');
+  }
+  const start = rowNumbers[0];
+  const actualValues = sheet.getRange(start, 1, rowNumbers.length, headers.length).getValues();
+  const byPhysicalRow = {};
+  rowNumbers.forEach(function (rowNumber, index) {
+    const expected = cleanString_(byRow[rowNumber] && byRow[rowNumber][keyHeader]);
+    const actual = cleanString_(actualValues[index] && actualValues[index][keyColumn - 1]);
+    if (!expected || actual !== expected) {
+      throw appError_(
+        'ROW_IDENTITY_MISMATCH',
+        sheetName + ' シートの行位置が読み込み後に変わりました。誤更新を防ぐため保存を中止しました。同期後にやり直してください。',
+        true
+      );
+    }
+    byPhysicalRow[rowNumber] = actualValues[index];
+  });
+  return byPhysicalRow;
+}
+
+function sameSheetValue_(left, right) {
+  if (left === right) return true;
+  if (left === null || left === undefined || right === null || right === undefined) {
+    return cleanString_(left) === cleanString_(right);
+  }
+  return String(left) === String(right);
 }
 
 function consecutiveRowBlocks_(rowNumbers) {
@@ -362,8 +510,19 @@ function consecutiveRowBlocks_(rowNumbers) {
   return blocks;
 }
 
-function deleteRow_(sheetName, rowNumber) {
-  SpreadsheetApp.getActive().getSheetByName(sheetName).deleteRow(rowNumber);
+function deleteRow_(sheetName, rowNumber, expectedKey) {
+  const sheet = SpreadsheetApp.getActive().getSheetByName(sheetName);
+  const keyHeader = PRIMARY_KEY_HEADER[sheetName];
+  const keyColumn = (HEADERS[sheetName] || []).indexOf(keyHeader) + 1;
+  const actualKey = keyColumn > 0 ? cleanString_(sheet.getRange(rowNumber, keyColumn, 1, 1).getValues()[0][0]) : '';
+  if (!cleanString_(expectedKey) || actualKey !== cleanString_(expectedKey)) {
+    throw appError_(
+      'ROW_IDENTITY_MISMATCH',
+      sheetName + ' シートの削除対象行が読み込み後に変わりました。誤削除を防ぐため中止しました。同期後にやり直してください。',
+      true
+    );
+  }
+  sheet.deleteRow(rowNumber);
 }
 
 if (typeof module !== 'undefined' && module.exports) {
@@ -372,6 +531,9 @@ if (typeof module !== 'undefined' && module.exports) {
     normalizeDateOnlyCell_: normalizeDateOnlyCell_,
     classifyHeaders_: classifyHeaders_,
     consecutiveRowBlocks_: consecutiveRowBlocks_,
-    writeObjects_: writeObjects_
+    writeObjects_: writeObjects_,
+    readAndAssertRowIdentities_: readAndAssertRowIdentities_,
+    readObjectsAtRows_: readObjectsAtRows_,
+    coalescedRowRanges_: coalescedRowRanges_
   };
 }

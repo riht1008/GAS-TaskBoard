@@ -9,6 +9,7 @@ function addNode(payload) {
     const rows = readNodeSnapshot_();
     const actor = requireCurrentMember_(rows.members);
     const active = activeNodes_(rows.nodes);
+    validateNodeTree_(active);
     const nodesById = byId_(active, 'NodeId');
     const parentId = cleanString_(payload.parentId);
     const parent = nodesById[parentId];
@@ -93,13 +94,14 @@ function saveNode(payload) {
     let rows = readNodeSnapshot_();
     const actor = requireCurrentMember_(rows.members);
     let active = activeNodes_(rows.nodes);
+    validateNodeTree_(active);
     let nodesById = byId_(active, 'NodeId');
     const node = nodesById[nodeId];
     if (!node) {
       throw new Error('ノードが見つかりません。');
     }
 
-    if (payload.baseUpdatedAt !== undefined && cleanString_(payload.baseUpdatedAt) !== cleanString_(node.UpdatedAt)) {
+    if (!nodeBaseVersionMatches_(payload, node, actor, true)) {
       return makeConflictPayload_(rows, nodeId, requestId);
     }
 
@@ -145,12 +147,12 @@ function saveNode(payload) {
       actorId: actor.MemberId
     });
     rows = readNodeSnapshot_();
-    if (statusChanged || progressChanged || actualDatesChanged) {
-      rows.activityLog = readObjects_(SHEET.ACTIVITY_LOG);
-      rows.__loadedSheets[SHEET.ACTIVITY_LOG] = true;
-    }
     const writeIds = Object.keys(writeMap);
     const affectedIds = unique_(writeIds.concat(ancestorIdsForMany_(writeIds, activeNodes_(rows.nodes))));
+    if (statusChanged || progressChanged || actualDatesChanged) {
+      rows.activityLog = readObjectsMatchingColumnValues_(SHEET.ACTIVITY_LOG, 'NodeId', affectedIds);
+      rows.__loadedSheets[SHEET.ACTIVITY_LOG] = true;
+    }
     if (statusChanged) {
       try {
         const afterNode = byId_(activeNodes_(rows.nodes), 'NodeId')[node.NodeId] || node;
@@ -181,14 +183,14 @@ function saveNode(payload) {
 function getNodeActualDates(payload) {
   payload = payload || {};
   requireSchemaExists_();
-  const rows = readAll_({
-    sheets: [SHEET.NODES, SHEET.STATUS_COLUMNS, SHEET.ACTIVITY_LOG]
-  });
+  const rows = readAll_({ sheets: [SHEET.NODES, SHEET.STATUS_COLUMNS] });
   const nodeId = cleanString_(payload.nodeId);
   const active = activeNodes_(rows.nodes);
   if (!byId_(active, 'NodeId')[nodeId]) {
     throw new Error('ノードが見つかりません。');
   }
+  rows.activityLog = readObjectsMatchingColumn_(SHEET.ACTIVITY_LOG, 'NodeId', nodeId);
+  rows.__loadedSheets[SHEET.ACTIVITY_LOG] = true;
   const derived = computeDerived_(active, rows.statusColumns);
   const actuals = clientActivityActuals_(rows, derived);
   const actual = actuals && actuals[nodeId] ? actuals[nodeId] : {};
@@ -208,6 +210,7 @@ function moveNode(payload) {
     let rows = readNodeSnapshot_();
     const actor = requireCurrentMember_(rows.members);
     const active = activeNodes_(rows.nodes);
+    validateNodeTree_(active);
     const nodesById = byId_(active, 'NodeId');
     const nodeId = cleanString_(payload.nodeId);
     const newParentId = cleanString_(payload.newParentId);
@@ -237,7 +240,7 @@ function moveNode(payload) {
     }
 
     const oldParentId = node.ParentId;
-    if (payload.baseUpdatedAt !== undefined && cleanString_(payload.baseUpdatedAt) !== cleanString_(node.UpdatedAt)) {
+    if (!nodeBaseVersionMatches_(payload, node, actor, false)) {
       return makeConflictPayload_(rows, nodeId, requestId);
     }
 
@@ -268,6 +271,7 @@ function deleteNode(payload) {
     const rows = readNodeSnapshot_();
     const actor = requireCurrentMember_(rows.members);
     const active = activeNodes_(rows.nodes);
+    validateNodeTree_(active);
     const nodesById = byId_(active, 'NodeId');
     const nodeId = cleanString_(payload.nodeId);
     const node = nodesById[nodeId];
@@ -277,14 +281,15 @@ function deleteNode(payload) {
     if (!node.ParentId) {
       throw new Error('ルートノードは削除できません。');
     }
-    if (payload.baseUpdatedAt !== undefined && cleanString_(payload.baseUpdatedAt) !== cleanString_(node.UpdatedAt)) {
+    if (!nodeBaseVersionMatches_(payload, node, actor, false)) {
       return makeConflictPayload_(rows, nodeId, cleanString_(payload.requestId));
     }
     const targetIds = [nodeId].concat(collectDescendantIds_(nodeId, childrenMap_(active)));
-    const expectedTargetIds = Array.isArray(payload.expectedTargetIds)
-      ? payload.expectedTargetIds.map(cleanString_).filter(Boolean).sort()
-      : [];
-    if (expectedTargetIds.length && expectedTargetIds.join(',') !== targetIds.slice().sort().join(',')) {
+    if (!Array.isArray(payload.expectedTargetIds)) {
+      throw appError_('DELETE_SCOPE_REQUIRED', '削除対象の確認情報がありません。同期後にもう一度削除してください。', false);
+    }
+    const expectedTargetIds = payload.expectedTargetIds.map(cleanString_).filter(Boolean).sort();
+    if (expectedTargetIds.join(',') !== targetIds.slice().sort().join(',')) {
       const affected = unique_(targetIds.concat(ancestorIds_(nodeId, active)));
       return {
         ok: false,
@@ -358,6 +363,7 @@ function restoreNode(payload) {
       return row;
     }).filter(Boolean);
     const prospectiveActive = activeNodes_(prospectiveRows.nodes);
+    validateNodeTree_(prospectiveActive);
     const visibleDependencies = validateDependencySet_(prospectiveActive, prospectiveRows.dependencies);
     const rescheduleWriteMap = {};
     const rescheduleResult = rescheduleFromSeeds_(
@@ -382,6 +388,7 @@ function restoreNode(payload) {
 
     rows = readNodeSnapshot_();
     const active = activeNodes_(rows.nodes);
+    validateNodeTree_(active);
     const affectedIds = unique_(targetIds
       .concat(rescheduleResult.shiftedIds)
       .concat([parentId])
@@ -402,13 +409,14 @@ function fitNodeToChildren(payload) {
     let rows = readNodeSnapshot_();
     const actor = requireCurrentMember_(rows.members);
     const active = activeNodes_(rows.nodes);
+    validateNodeTree_(active);
     const nodesById = byId_(active, 'NodeId');
     const nodeId = cleanString_(payload.nodeId);
     const node = nodesById[nodeId];
     if (!node) {
       throw new Error('ノードが見つかりません。');
     }
-    if (payload.baseUpdatedAt !== undefined && cleanString_(payload.baseUpdatedAt) !== cleanString_(node.UpdatedAt)) {
+    if (!nodeBaseVersionMatches_(payload, node, actor, false)) {
       return makeConflictPayload_(rows, nodeId, requestId);
     }
 
@@ -511,6 +519,17 @@ function applyNodePatch_(node, patch, rows) {
     node.ActualStartDate = actual.startDate;
     node.ActualEndDate = actual.endDate;
   }
+}
+
+function nodeBaseVersionMatches_(payload, node, actor, allowOwnedDraft) {
+  const hasBase = Object.prototype.hasOwnProperty.call(payload || {}, 'baseUpdatedAt') && payload.baseUpdatedAt !== undefined;
+  const isOwnedDraft = allowOwnedDraft && cleanString_(node && node.DraftOwner) &&
+    cleanString_(node.DraftOwner) === cleanString_(actor && actor.MemberId);
+  if (!hasBase) {
+    if (isOwnedDraft) return true;
+    throw appError_('BASE_VERSION_REQUIRED', '更新元のバージョン情報がありません。同期後にもう一度保存してください。', false);
+  }
+  return cleanString_(payload.baseUpdatedAt) === cleanString_(node && node.UpdatedAt);
 }
 
 function rollupParentStatuses_(rows, seedIds, actorId, writeMap) {
@@ -624,6 +643,7 @@ function hasExpiredDraftNodes_(nodes, nowMs) {
 function cleanupExpiredDraftNodes_(rows, nowMs) {
   const current = Number(nowMs) || Date.now();
   const active = activeNodes_(rows.nodes || []);
+  validateNodeTree_(active);
   const nodesById = byId_(active, 'NodeId');
   const children = childrenMap_(active);
   const expiredRoots = active.filter(function (node) {
@@ -661,6 +681,8 @@ if (typeof module !== 'undefined' && module.exports) {
     deleteNode: deleteNode,
     restoreNode: restoreNode,
     hasExpiredDraftNodes_: hasExpiredDraftNodes_,
-    cleanupExpiredDraftNodes_: cleanupExpiredDraftNodes_
+    cleanupExpiredDraftNodes_: cleanupExpiredDraftNodes_,
+    applyNodePatch_: applyNodePatch_,
+    nodeBaseVersionMatches_: nodeBaseVersionMatches_
   };
 }

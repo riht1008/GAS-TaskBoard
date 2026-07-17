@@ -353,6 +353,12 @@ function descendantOwnScheduleBounds_(nodeId, activeNodes) {
 function commentCounts_(rows) {
   const activeMap = byId_(payloadVisibleNodes_(rows), 'NodeId');
   const counts = {};
+  if (rows.commentCounts && typeof rows.commentCounts === 'object') {
+    Object.keys(rows.commentCounts).forEach(function (nodeId) {
+      if (activeMap[nodeId]) counts[nodeId] = Number(rows.commentCounts[nodeId]) || 0;
+    });
+    return counts;
+  }
   rows.comments.forEach(function (comment) {
     const nodeId = cleanString_(comment.NodeId);
     if (activeMap[nodeId]) {

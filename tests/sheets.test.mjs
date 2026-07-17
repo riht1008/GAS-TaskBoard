@@ -33,7 +33,7 @@ test('actual date columns are an append-only Nodes schema extension', () => {
 
 test('SlackUserId is an append-only Members schema extension', () => {
   assert.match(configSource, /HEADERS\[SHEET\.MEMBERS\] = \['MemberId', 'Name', 'Email', 'Color', 'Company', 'SlackUserId'\]/);
-  assert.match(configSource, /TEXT_COLUMNS\[SHEET\.MEMBERS\] = \['MemberId', 'Email', 'Color', 'SlackUserId'\]/);
+  assert.match(configSource, /TEXT_COLUMNS\[SHEET\.MEMBERS\] = \['MemberId', 'Name', 'Email', 'Color', 'Company', 'SlackUserId'\]/);
 });
 
 test('normalizeCellValue formats milestone Date objects as yyyy-mm-dd in script timezone', () => {
@@ -65,6 +65,11 @@ test('normalizeCellValue keeps timestamp Date objects as ISO strings', () => {
   assert.equal(normalizeCellValue_('Comments', 'Timestamp', value), '2026-07-14T15:00:00.000Z');
 });
 
+test('normalizeCellValue removes only the literal marker used for dangerous formula prefixes', () => {
+  assert.equal(normalizeCellValue_('Comments', 'Text', "'=SUM(A1:A2)"), '=SUM(A1:A2)');
+  assert.equal(normalizeCellValue_('Comments', 'Text', "'ordinary"), "'ordinary");
+});
+
 test('classifyHeaders allows only known trailing columns to be appended', () => {
   assert.deepEqual(
     classifyHeaders_(['NodeId', 'Name'], ['NodeId', 'Name', 'DraftOwner']),
@@ -94,12 +99,16 @@ test('sparse row updates are split into consecutive blocks', () => {
 test('writeObjects writes only targeted consecutive ranges', () => {
   const writes = [];
   global.HEADERS = { Nodes: ['NodeId', 'Name'] };
+  global.PRIMARY_KEY_HEADER = { Nodes: 'NodeId' };
   global.TEXT_COLUMNS = { Nodes: [] };
   global.sheetValue_ = value => value === undefined ? '' : value;
+  global.appError_ = (code, message) => Object.assign(new Error(message), { code });
+  const idsByRow = { 2: 'a', 3: 'b', 8: 'c' };
   global.SpreadsheetApp = {
     getActive: () => ({
       getSheetByName: () => ({
         getRange: (row, column, rowCount, columnCount) => ({
+          getValues: () => Array.from({ length: rowCount }, (_, offset) => [idsByRow[row + offset] || '']),
           setValues: values => writes.push({ row, column, rowCount, columnCount, values })
         })
       })
@@ -116,4 +125,63 @@ test('writeObjects writes only targeted consecutive ranges', () => {
     { row: 2, column: 1, rowCount: 2, columnCount: 2, values: [['a', 'A'], ['b', 'B']] },
     { row: 8, column: 1, rowCount: 1, columnCount: 2, values: [['c', 'C']] }
   ]);
+});
+
+test('writeObjects aborts before writing if a physical row now belongs to another id', () => {
+  const writes = [];
+  global.HEADERS = { Nodes: ['NodeId', 'Name'] };
+  global.PRIMARY_KEY_HEADER = { Nodes: 'NodeId' };
+  global.TEXT_COLUMNS = { Nodes: [] };
+  global.sheetValue_ = value => value === undefined ? '' : value;
+  global.appError_ = (code, message) => Object.assign(new Error(message), { code });
+  global.SpreadsheetApp = {
+    getActive: () => ({
+      getSheetByName: () => ({
+        getRange: () => ({
+          getValues: () => [['different-id']],
+          setValues: values => writes.push(values)
+        })
+      })
+    })
+  };
+
+  assert.throws(
+    () => writeObjects_('Nodes', [{ __row: 2, NodeId: 'expected-id', Name: 'A' }]),
+    error => error.code === 'ROW_IDENTITY_MISMATCH'
+  );
+  assert.deepEqual(writes, []);
+});
+
+test('writeObjects preserves a direct edit in an unchanged field while applying the intended patch', () => {
+  const writes = [];
+  global.HEADERS = { Nodes: ['NodeId', 'Description', 'StatusColumnId'] };
+  global.PRIMARY_KEY_HEADER = { Nodes: 'NodeId' };
+  global.TEXT_COLUMNS = { Nodes: [] };
+  global.sheetValue_ = value => value === undefined ? '' : value;
+  global.appError_ = (code, message) => Object.assign(new Error(message), { code });
+  global.SpreadsheetApp = {
+    getActive: () => ({
+      getSheetByName: () => ({
+        getRange: () => ({
+          getValues: () => [['n1', 'シートで直接更新', 'todo']],
+          setValues: values => writes.push(values)
+        })
+      })
+    })
+  };
+  const row = {
+    __row: 2,
+    NodeId: 'n1',
+    Description: '読込時の説明',
+    StatusColumnId: 'doing',
+    __originalValues: {
+      NodeId: 'n1',
+      Description: '読込時の説明',
+      StatusColumnId: 'todo'
+    }
+  };
+
+  writeObjects_('Nodes', [row]);
+
+  assert.deepEqual(writes, [[['n1', 'シートで直接更新', 'doing']]]);
 });

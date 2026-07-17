@@ -1272,6 +1272,22 @@
       };
     }
 
+    function detailPatchBetweenSnapshots(baseline, current, includeProgress) {
+      const patch = {};
+      const scalarFields = [
+        'name', 'statusColumnId', 'priority', 'startDate', 'endDate',
+        'actualStartDate', 'actualEndDate', 'description', 'deliverable', 'note', 'includeInWbs'
+      ];
+      scalarFields.forEach(field => {
+        if (baseline[field] !== current[field]) patch[field] = current[field];
+      });
+      if ((baseline.assigneeIds || []).join(',') !== (current.assigneeIds || []).join(',')) {
+        patch.assigneeIds = (current.assigneeIds || []).slice();
+      }
+      if (includeProgress && baseline.progress !== current.progress) patch.progress = current.progress;
+      return patch;
+    }
+
     function sameDetailSnapshot(a, b) {
       return a.name === b.name
         && a.statusColumnId === b.statusColumnId
@@ -1379,24 +1395,11 @@
         focusDetailNameInput();
         return;
       }
-      const patch = {
-        name: cleanText(draft.name),
-        statusColumnId: draft.statusColumnId,
-        priority: draft.priority,
-        assigneeIds: draft.assigneeIds,
-        startDate: draft.startDate,
-        endDate: draft.endDate,
-        actualStartDate: draft.actualStartDate,
-        actualEndDate: draft.actualEndDate,
-        description: draft.description,
-        deliverable: draft.deliverable,
-        note: draft.note,
-        includeInWbs: draft.includeInWbs !== false
-      };
-      if (node.isLeaf) {
-        patch.progress = normalizeProgressValue(draft.progress) === null ? 0 : normalizeProgressValue(draft.progress);
-      }
       const wasShell = state.shellNodeId === node.id;
+      const currentSnapshot = detailSnapshotFromDraft(draft);
+      const patch = wasShell
+        ? detailPatchFromSnapshot(currentSnapshot)
+        : detailPatchBetweenSnapshots(detailSnapshotFromNode(node), currentSnapshot, node.isLeaf);
       const parentId = node.parentId || state.rootId;
       const drawerReturnFocus = state.drawerReturnFocus;
       const reopenDraft = detailSnapshotFromDraft(draft);
@@ -1675,6 +1678,7 @@
           state.lastSyncAt = new Date().toISOString();
         }
         render();
+        flushDeferredFullSync_();
       });
       state.nodeMutationChain = chain;
       return chain;
@@ -1832,10 +1836,18 @@
         comments.push(comment);
         state.comments.set(nodeId, comments);
         state.commentCounts[nodeId] = (Number(state.commentCounts[nodeId]) || 0) + 1;
-      }, () => {
+      }, error => {
+        if (error && error.code === 'SERVER_TIMEOUT') return;
         const comments = (state.comments.get(nodeId) || []).filter(item => item.id !== commentId);
         state.comments.set(nodeId, comments);
         state.commentCounts[nodeId] = Math.max(0, (Number(state.commentCounts[nodeId]) || 1) - 1);
+        if (!state.commentDrafts[nodeId]) state.commentDrafts[nodeId] = text;
+        if (!state.commentReplyTo && reply) state.commentReplyTo = reply;
+        state.commentMentionIds[nodeId] = mentions.slice();
+      }, {
+        onError: error => {
+          if (error && error.code === 'SERVER_TIMEOUT') loadComments(nodeId);
+        }
       });
     }
 
@@ -1966,6 +1978,7 @@
     function saveInlineNodeField(nodeId, field, value) {
       const node = state.nodesById.get(nodeId);
       if (!node || node.id === state.rootId) return;
+      clearInlineDraft(nodeId, field);
       const patch = {};
       if (field === 'name') {
         const name = cleanText(value);

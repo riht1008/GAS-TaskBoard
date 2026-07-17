@@ -5,7 +5,7 @@ import test from 'node:test';
 global.cleanString_ = value => value === null || value === undefined ? '' : String(value).trim();
 
 const require = createRequire(import.meta.url);
-const { addComment, commentPage_, upsertMember } = require('../src/02_CollaborationApi.js');
+const { addComment, commentPage_, getComments, upsertMember } = require('../src/02_CollaborationApi.js');
 
 test('member updates reject a Slack member ID already linked to someone else', () => {
   const members = [
@@ -47,6 +47,60 @@ test('commentPage keeps replies with their parent and paginates parent threads',
   assert.ok(page.comments.some(comment => comment.id === 'p12'));
   assert.ok(page.comments.some(comment => comment.id === 'r12'));
   assert.equal(page.nextCursor.beforeId, 'p3');
+});
+
+test('commentPage returns a bounded page from ten thousand threads', () => {
+  const comments = Array.from({ length: 10000 }, (_, index) => ({
+    id: `p${String(index).padStart(5, '0')}`,
+    timestamp: new Date(Date.UTC(2020, 0, 1, 0, index)).toISOString(),
+    parentCommentId: ''
+  }));
+
+  const page = commentPage_(comments, { limit: 50 });
+
+  assert.equal(page.comments.length, 50);
+  assert.equal(page.hasMore, true);
+  assert.ok(page.nextCursor);
+});
+
+test('getComments hydrates only the selected page bodies after reading the lightweight index', () => {
+  const index = Array.from({ length: 12 }, (_, offset) => ({
+    __row: offset + 2,
+    CommentId: `p${offset + 1}`,
+    NodeId: 'n1',
+    Timestamp: `2026-07-${String(offset + 1).padStart(2, '0')}T00:00:00.000Z`,
+    ParentCommentId: ''
+  }));
+  let hydratedRows = [];
+  global.SHEET = { COMMENTS: 'Comments' };
+  global.requireSchemaExists_ = () => {};
+  global.readCommentSnapshot_ = () => ({ nodes: [{ NodeId: 'n1' }], comments: index });
+  global.activeNodes_ = nodes => nodes;
+  global.byId_ = (items, key) => Object.fromEntries(items.map(item => [item[key], item]));
+  global.readObjectsAtRows_ = (_sheet, rows) => {
+    hydratedRows = rows.slice();
+    return index.filter(item => rows.includes(item.__row)).map(item => ({
+      ...item,
+      AuthorId: 'm1',
+      AuthorName: '投稿者',
+      Text: `本文${item.CommentId}`,
+      Mentions: ''
+    }));
+  };
+  global.clientComment_ = comment => ({
+    id: comment.CommentId,
+    nodeId: comment.NodeId,
+    timestamp: comment.Timestamp,
+    text: comment.Text,
+    parentCommentId: comment.ParentCommentId
+  });
+
+  const page = getComments('n1', { limit: 10 });
+
+  assert.equal(page.comments.length, 10);
+  assert.equal(hydratedRows.length, 10);
+  assert.equal(page.hasMore, true);
+  assert.ok(page.comments.every(comment => comment.text.startsWith('本文')));
 });
 
 test('addComment posts one mention notification after releasing the sheet lock', () => {

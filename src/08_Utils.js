@@ -17,8 +17,17 @@ function childrenMap_(nodes) {
 function collectDescendantIds_(nodeId, children) {
   const result = [];
   const stack = (children[nodeId] || []).slice();
+  const visited = {};
+  visited[cleanString_(nodeId)] = true;
   while (stack.length) {
-    const id = stack.shift();
+    const id = cleanString_(stack.shift());
+    if (!id) {
+      continue;
+    }
+    if (visited[id]) {
+      throw appError_('NODE_TREE_INVALID', 'ノード階層に循環または重複参照があります。シートの ParentId を確認してください。', false);
+    }
+    visited[id] = true;
     result.push(id);
     (children[id] || []).forEach(function (childId) { stack.push(childId); });
   }
@@ -108,6 +117,11 @@ function sheetValue_(value) {
   if (typeof value === 'boolean') {
     return value;
   }
+  if (typeof value === 'string' && /^[=+\-@]/.test(value)) {
+    // Sheets interprets these prefixes as formulas in some write/import paths.
+    // The leading apostrophe is a display-neutral literal marker in Sheets.
+    return "'" + value;
+  }
   return value;
 }
 
@@ -153,4 +167,13 @@ function cloneRow_(row) {
   const clone = {};
   Object.keys(row).forEach(function (key) { clone[key] = row[key]; });
   return clone;
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    collectDescendantIds_: collectDescendantIds_,
+    sheetValue_: sheetValue_,
+    isValidDate_: isValidDate_,
+    dateToDay_: dateToDay_
+  };
 }

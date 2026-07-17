@@ -18,6 +18,9 @@ global.isValidDate_ = value => {
 global.dateToDay_ = date => Math.floor(Date.parse(`${date}T00:00:00Z`) / global.DAY_MS);
 global.dayToDate_ = day => new Date(day * global.DAY_MS).toISOString().slice(0, 10);
 global.cloneRow_ = row => ({ ...row });
+global.assertProjectDateRange_ = (start, end) => {
+  if (start < '2000-01-01' || end > '2100-12-31') throw new Error('日付範囲が不正です。');
+};
 
 const api = require('../src/11_CalendarApi.js');
 const configSource = fs.readFileSync(new URL('../src/00_Config.js', import.meta.url), 'utf8');

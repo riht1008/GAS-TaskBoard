@@ -21,12 +21,12 @@ function include(filename) {
 
 function loadAll() {
   ensureSchema_();
-  let rows = readAll_();
+  let rows = readAll_({ includeCommentCounts: true });
   if (hasExpiredDraftNodes_(rows.nodes)) {
     rows = withLock_(function () {
-      const freshRows = readAll_();
+      const freshRows = readAll_({ includeCommentCounts: true });
       cleanupExpiredDraftNodes_(freshRows);
-      return readAll_();
+      return readAll_({ includeCommentCounts: true });
     });
   }
   const activeNodes = activeNodes_(rows.nodes);
@@ -142,7 +142,7 @@ function setupProject(payload) {
       ActualEndDate: ''
     });
 
-    const completedRows = readAll_();
+    const completedRows = readAll_({ includeCommentCounts: true });
     assertExactlyOneDone_(completedRows.statusColumns);
     return makeFullPayload_(completedRows);
   });

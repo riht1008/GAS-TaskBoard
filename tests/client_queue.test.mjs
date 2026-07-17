@@ -42,6 +42,7 @@ function queueContext() {
     render: () => {},
     persistLocalCache: () => {},
     showToast: () => {},
+    flushDeferredFullSync_: () => {},
     mergeNodes: incoming => {
       const byId = new Map(state.nodes.map(item => [item.id, item]));
       incoming.forEach(item => byId.set(item.id, item));
@@ -84,6 +85,7 @@ test('an earlier response is merged and then newer optimistic patches are reappl
     render: () => {},
     persistLocalCache: () => {},
     showToast: () => {},
+    flushDeferredFullSync_: () => {},
     mergeNodes: incoming => {
       const byId = new Map(state.nodes.map(item => [item.id, item]));
       incoming.forEach(item => byId.set(item.id, item));

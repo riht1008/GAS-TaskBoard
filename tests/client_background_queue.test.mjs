@@ -34,6 +34,7 @@ test('a node-affecting background mutation waits for the shared node chain', asy
     persistLocalCache: () => {},
     render: () => {},
     showToast: () => {},
+    flushDeferredFullSync_: () => {},
     applyMutationResult: () => true,
     serverCallWithRetry: (name, args) => new Promise((resolve, reject) => calls.push({ name, args, resolve, reject }))
   });

@@ -54,7 +54,7 @@ function deleteDependency(payload) {
     if (!dep) {
       throw new Error('依存関係が見つかりません。');
     }
-    deleteRow_(SHEET.DEPENDENCIES, dep.__row);
+    deleteRow_(SHEET.DEPENDENCIES, dep.__row, dep.DependencyId);
     return {
       ok: true,
       requestId: cleanString_(payload.requestId),
@@ -65,6 +65,16 @@ function deleteDependency(payload) {
 
 function rescheduleFromSeeds_(seedIds, activeNodes, dependencies, actorMemberId, writeMap) {
   const nodesById = byId_(activeNodes, 'NodeId');
+  const outgoing = {};
+  const incoming = {};
+  dependencies.forEach(function (dep) {
+    const from = cleanString_(dep.PredecessorNodeId);
+    const to = cleanString_(dep.SuccessorNodeId);
+    if (!outgoing[from]) outgoing[from] = [];
+    if (!incoming[to]) incoming[to] = [];
+    outgoing[from].push(to);
+    incoming[to].push(from);
+  });
   const affectedSet = {};
   const stack = seedIds.slice();
   while (stack.length) {
@@ -73,11 +83,7 @@ function rescheduleFromSeeds_(seedIds, activeNodes, dependencies, actorMemberId,
       continue;
     }
     affectedSet[id] = true;
-    dependencies.forEach(function (dep) {
-      if (cleanString_(dep.PredecessorNodeId) === id) {
-        stack.push(cleanString_(dep.SuccessorNodeId));
-      }
-    });
+    (outgoing[id] || []).forEach(function (successorId) { stack.push(successorId); });
   }
 
   const affectedIds = Object.keys(affectedSet).filter(function (id) { return !!nodesById[id]; });
@@ -88,10 +94,7 @@ function rescheduleFromSeeds_(seedIds, activeNodes, dependencies, actorMemberId,
     if (!node || !hasSchedule_(node)) {
       return;
     }
-    const predecessors = dependencies
-      .filter(function (dep) { return cleanString_(dep.SuccessorNodeId) === id; })
-      .map(function (dep) { return cleanString_(dep.PredecessorNodeId); })
-      .filter(function (predId) { return !!nodesById[predId]; });
+    const predecessors = (incoming[id] || []).filter(function (predId) { return !!nodesById[predId]; });
     if (!predecessors.length) {
       return;
     }

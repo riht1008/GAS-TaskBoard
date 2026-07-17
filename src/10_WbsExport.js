@@ -18,6 +18,7 @@ function upsertMilestone(payload) {
     if (!isValidDate_(date)) {
       throw new Error('マイルストーン日付は YYYY-MM-DD 形式で入力してください。');
     }
+    assertProjectDateRange_(date, date, 'マイルストーン日付');
     const note = cleanString_(payload.note);
     const sortOrder = payload.sortOrder !== undefined && payload.sortOrder !== null && payload.sortOrder !== ''
       ? Number(payload.sortOrder)
@@ -62,7 +63,7 @@ function deleteMilestone(payload) {
     if (!milestone) {
       throw new Error('マイルストーンが見つかりません。');
     }
-    deleteRow_(SHEET.MILESTONES, milestone.__row);
+    deleteRow_(SHEET.MILESTONES, milestone.__row, milestone.MilestoneId);
     return { ok: true, milestones: readProjectSettingsSnapshot_().milestones.map(clientMilestone_).sort(compareSortOrder_) };
   });
 }
@@ -127,7 +128,7 @@ function deleteMeeting(payload) {
     if (!meeting) {
       throw new Error('会議体が見つかりません。');
     }
-    deleteRow_(SHEET.MEETINGS, meeting.__row);
+    deleteRow_(SHEET.MEETINGS, meeting.__row, meeting.MeetingId);
     return { ok: true, meetings: readProjectSettingsSnapshot_().meetings.map(clientMeeting_).sort(compareSortOrder_) };
   });
 }
@@ -158,6 +159,7 @@ function normalizeMeetingScheduleRulePayload_(payload) {
   if (endDate && endDate < startDate) {
     throw new Error('開催ルールの終了日は初回開催日以降にしてください。');
   }
+  assertProjectDateRange_(startDate, endDate || startDate, '開催期間');
 
   const rule = {
     type: type,
@@ -237,7 +239,7 @@ function exportWbs() {
   const startedAt = Date.now();
 
   try {
-    const rows = readAll_({ includeActivityLog: true });
+    const rows = readAll_({ includeActivityLog: true, includeCommentCounts: false });
     const documentProps = PropertiesService.getDocumentProperties();
     const nowIso = nowIso_();
     const createdAt = documentProps.getProperty('WBS_CREATED_AT') || nowIso;

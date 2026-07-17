@@ -85,9 +85,11 @@
       backgroundChains: new Map(),
       pendingMutationCount: 0,
       mutationGeneration: 0,
+      fullSyncDeferred: false,
       nodeMutationChain: null,
       pendingNodeMutations: new Map(),
       savingNodeIds: new Set(),
+      inlineDrafts: new Map(),
       requestCounter: 0,
       toasts: [],
       toastCounter: 0,
@@ -125,6 +127,9 @@
     const LOCAL_CACHE_INDEX_KEY = 'gasTaskManager.cache.index.v2';
     const LOCAL_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
     const SERVER_CALL_TIMEOUT_MS = 60000;
+    const PROJECT_DATE_MIN = '2000-01-01';
+    const PROJECT_DATE_MAX = '2100-12-31';
+    const MAX_GANTT_DISPLAY_DAYS = 3660;
     const GANTT_ROW_HEIGHT = 40;
     const GANTT_TREE_WIDTH_MIN = 360;
     const GANTT_TREE_WIDTH_MAX = 900;

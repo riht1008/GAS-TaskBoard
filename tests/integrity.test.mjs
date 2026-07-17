@@ -14,7 +14,7 @@ global.isValidDate_ = value => {
 global.dateToDay_ = value => Date.parse(`${value}T00:00:00.000Z`) / 86400000;
 
 const require = createRequire(import.meta.url);
-const { validateNodeTree_, normalizeActualDates_, normalizeSlackUserId_ } = require('../src/07_Validation.js');
+const { validateNodeTree_, normalizeSchedule_, normalizeActualDates_, normalizeSlackUserId_ } = require('../src/07_Validation.js');
 
 test('Slack member IDs are optional, normalized, and validated', () => {
   assert.equal(normalizeSlackUserId_(' u012ab3cd '), 'U012AB3CD');
@@ -30,6 +30,15 @@ test('actual dates accept a complete range or automatic blank state', () => {
   });
   assert.throws(() => normalizeActualDates_('2026-07-10', ''), /両方を入力/);
   assert.throws(() => normalizeActualDates_('2026-07-12', '2026-07-10'), /実績着手日以降/);
+});
+
+test('task schedules are bounded to a safe project horizon and span', () => {
+  assert.deepEqual(normalizeSchedule_('2026-01-01', '2026-12-31'), {
+    startDate: '2026-01-01',
+    endDate: '2026-12-31'
+  });
+  assert.throws(() => normalizeSchedule_('1999-12-31', '2000-01-01'), /2000-01-01/);
+  assert.throws(() => normalizeSchedule_('2090-01-01', '2100-12-31'), /3660日/);
 });
 
 test('node tree validation accepts one connected acyclic root tree', () => {
