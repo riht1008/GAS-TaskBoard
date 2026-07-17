@@ -608,6 +608,14 @@
       }
 
       lines.forEach((rawLine, index) => {
+        if (!rawLine.trim()) {
+          closeLists();
+          const nextLine = lines[index + 1] || '';
+          if (nextLine.trim() && !new RegExp('^#{1,3}\\s+').test(nextLine)) {
+            html += '<div class="markdown-gap"></div>';
+          }
+          return;
+        }
         const headingMatch = rawLine.match(new RegExp('^(#{1,3})\\s+(.+)$'));
         if (headingMatch) {
           closeLists();
@@ -619,7 +627,7 @@
         if (!match) {
           closeLists();
           html += formatInlineMarkdown(h(rawLine), mentionIds);
-          if (index < lines.length - 1) html += '<br>';
+          if (index < lines.length - 1 && String(lines[index + 1] || '').trim()) html += '<br>';
           return;
         }
         let level = match[1].length >= 2 ? 1 : 0;

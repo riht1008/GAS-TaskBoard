@@ -14,7 +14,7 @@ test('detail drawer uses a wide content and property split with responsive fallb
   assert.match(panels, /drawer detail-drawer/);
   assert.match(panels, /<main class="detail-main">/);
   assert.match(panels, /<aside class="detail-sidebar" aria-label="タスクのプロパティ">/);
-  assert.match(styles, /grid-template-columns: minmax\(0, 1fr\) calc\(var\(--space-12\) \* 7\)/);
+  assert.match(styles, /grid-template-columns: minmax\(0, 1fr\) calc\(var\(--space-12\) \* 6 \+ var\(--space-8\)\)/);
   assert.match(styles, /@media \(max-width: 960px\)[\s\S]*\.detail-drawer-body \{[\s\S]*display: block/);
 });
 
@@ -31,7 +31,8 @@ test('detail drawer exposes editable actual dates and keeps them in the save sna
 test('description and comment composer receive the primary editing space', () => {
   assert.match(panels, /detail-description-textarea/);
   assert.match(panels, /detail-comments-section/);
-  assert.match(styles, /\.detail-description-textarea \{[\s\S]*min-height: calc\(var\(--space-12\) \* 4\)/);
+  assert.match(styles, /\.detail-description-textarea \{[\s\S]*min-height: calc\(var\(--space-12\) \* 3\)/);
+  assert.match(panels, /detail-content-card/);
   assert.match(styles, /\.detail-comments-section \.comment-composer \.textarea \{[\s\S]*min-height: calc\(var\(--space-12\) \* 3\)/);
 });
 
@@ -53,8 +54,9 @@ test('description has explicit read and edit modes with Escape returning to read
   assert.match(bindings, /if \(state\.detailDescriptionEditing\)[\s\S]{0,220}finishDetailDescriptionEdit\(\)/);
 });
 
-test('comments use a timeline and the save footer appears only for a dirty draft', () => {
-  assert.match(panels, /comment-list comment-timeline/);
+test('comments use a timeline only when populated and the save footer appears only for a dirty draft', () => {
+  assert.match(panels, /comment-list \$\{comments && comments\.length \? 'comment-timeline' : 'comment-empty-state'\}/);
+  assert.match(panels, /detail-empty-comments/);
   assert.match(styles, /\.comment-timeline::before/);
   assert.match(panels, /detail-save-footer" \$\{showSaveFooter \? '' : 'hidden'\}/);
   assert.match(actions, /function updateDetailSaveFooter\(\)/);

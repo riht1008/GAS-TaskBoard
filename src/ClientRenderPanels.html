@@ -8,6 +8,7 @@
       const childNodes = childrenOf(node.id);
       const parent = node.parentId ? state.nodesById.get(node.parentId) : null;
       const doneColumnId = doneStatusColumnId();
+      const statusColumn = state.statusColumns.find(column => column.id === draft.statusColumnId);
       const progressValue = draft.statusColumnId === doneColumnId ? 100 : normalizeProgressValue(draft.progress) === null ? 0 : normalizeProgressValue(draft.progress);
       const ancestorExcluded = hasWbsExcludedAncestor(node.id);
       const inferredActualRange = formatRange(node.inferredActualStartDate || '', node.inferredActualEndDate || '');
@@ -28,41 +29,46 @@
             <div class="drawer-body detail-drawer-body">
               <main class="detail-main">
                 <section class="detail-title-section">
-                  <textarea class="textarea task-name-textarea detail-name-textarea" rows="2" aria-label="タスク名" data-detail-name-input data-draft-scope="detail" data-draft-field="name" ${state.currentMember ? '' : 'readonly'}>${h(draft.name)}</textarea>
+                  <textarea class="textarea task-name-textarea detail-name-textarea" rows="1" aria-label="タスク名" data-detail-name-input data-draft-scope="detail" data-draft-field="name" ${state.currentMember ? '' : 'readonly'}>${h(draft.name)}</textarea>
                   <div class="detail-summary" aria-label="タスクの概要">
-                    <span class="chip">${Math.round(node.hasChildren ? node.progress : progressValue)}%</span>
-                    <span class="mono">${h(formatRange(node.displayStartDate, node.displayEndDate))}</span>
+                    ${statusColumn ? `<span class="detail-status-badge"><span class="color-dot" style="background:${h(statusColumn.color || defaultStatusColor(statusColumn))}"></span>${h(statusColumn.name)}</span>` : ''}
+                    <span class="chip">進捗 ${Math.round(node.hasChildren ? node.progress : progressValue)}%</span>
+                    ${node.displayStartDate || node.displayEndDate ? `<span class="mono">${h(formatRange(node.displayStartDate, node.displayEndDate))}</span>` : ''}
                     ${draft.includeInWbs === false ? '<span class="chip">WBS外</span>' : ''}
                   </div>
                 </section>
-                <section class="detail-content-section">
-                  <div class="detail-section-heading">
-                    <div class="section-title">説明</div>
-                    ${!state.detailDescriptionEditing && state.currentMember ? `<button class="button ghost compact" type="button" data-action="edit-detail-description">${icon('edit')}編集</button>` : ''}
+                <section class="detail-content-section detail-description-section">
+                  <div class="detail-content-card">
+                    <div class="detail-content-card-head">
+                      <div class="section-title">説明</div>
+                      ${!state.detailDescriptionEditing && state.currentMember ? `<button class="button ghost compact" type="button" data-action="edit-detail-description">${icon('edit')}編集</button>` : ''}
+                    </div>
+                    <div class="detail-content-card-body">
+                      ${state.detailDescriptionEditing ? `
+                        <div class="detail-description-editor">
+                          <textarea class="textarea detail-description-textarea" data-detail-description-input data-draft-scope="detail" data-draft-field="description" placeholder="目的、背景、完了条件などを記載">${h(draft.description)}</textarea>
+                          <div class="detail-description-actions">
+                            <span class="field-hint">Escでも閲覧表示へ戻れます</span>
+                            <button class="button secondary compact" type="button" data-action="finish-detail-description">編集を終了</button>
+                          </div>
+                        </div>
+                      ` : `
+                        <div class="detail-description-preview">
+                          ${descriptionPreview}
+                        </div>
+                      `}
+                    </div>
                   </div>
-                  ${state.detailDescriptionEditing ? `
-                    <div class="detail-description-editor">
-                      <textarea class="textarea detail-description-textarea" data-detail-description-input data-draft-scope="detail" data-draft-field="description" placeholder="目的、背景、完了条件などを記載">${h(draft.description)}</textarea>
-                      <div class="detail-description-actions">
-                        <span class="field-hint">Escでも閲覧表示へ戻れます</span>
-                        <button class="button secondary compact" type="button" data-action="finish-detail-description">編集を終了</button>
-                      </div>
-                    </div>
-                  ` : `
-                    <div class="detail-description-preview">
-                      ${descriptionPreview}
-                    </div>
-                  `}
                 </section>
                 <section class="detail-content-section detail-comments-section">
                   <div class="detail-section-heading">
                     <div class="section-title">コメント</div>
                     ${comments ? `<span class="chip">${comments.length}</span>` : ''}
                   </div>
-                  <div class="comment-list comment-timeline">
+                  <div class="comment-list ${comments && comments.length ? 'comment-timeline' : 'comment-empty-state'}">
                     ${(state.commentPages.get(node.id) || {}).hasMore ? `<button class="button secondary compact" data-action="load-earlier-comments" data-node-id="${h(node.id)}" ${state.commentsLoading.has(node.id) ? 'disabled' : ''}>以前のコメントを読み込む</button>` : ''}
                     ${comments ? renderCommentThreads(comments) : '<div class="meta-line">読み込み中</div>'}
-                    ${comments && !comments.length ? '<div class="meta-line">コメントなし</div>' : ''}
+                    ${comments && !comments.length ? '<div class="detail-empty-comments">まだコメントはありません</div>' : ''}
                     ${renderCommentComposer(node.id)}
                   </div>
                 </section>
@@ -252,7 +258,7 @@
           ` : ''}
           <textarea class="textarea" id="commentText" data-comment-text="${h(nodeId)}" placeholder="コメント" aria-label="コメントを追加" ${state.currentMember ? '' : 'disabled'}>${h(draft)}</textarea>
           ${mention && mention.active ? renderMentionMenu(mention) : ''}
-          <button class="button secondary" data-action="post-comment" ${state.currentMember ? '' : 'disabled'}>コメントを保存</button>
+          <button class="button primary comment-submit" data-action="post-comment" ${state.currentMember ? '' : 'disabled'}>コメントを保存</button>
         </div>
       `;
     }
