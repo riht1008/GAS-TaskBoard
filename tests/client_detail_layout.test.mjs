@@ -37,8 +37,9 @@ test('description and comment composer receive the primary editing space', () =>
 });
 
 test('detail drawer uses one task title and compact property rows', () => {
-  assert.match(panels, /drawer-title detail-toolbar-title">タスク詳細/);
-  assert.doesNotMatch(panels, /drawer-title">\$\{h\(node\.name/);
+  assert.match(panels, /aria-label="タスク詳細"/);
+  assert.match(panels, /detail-floating-actions/);
+  assert.doesNotMatch(panels, /detail-toolbar-title/);
   assert.match(panels, /aria-label="タスク名"/);
   assert.match(panels, /function renderDetailPropertyRow/);
   assert.match(panels, /field: 'statusColumnId'[\s\S]{0,180}plain: true/);

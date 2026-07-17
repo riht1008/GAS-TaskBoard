@@ -19,12 +19,11 @@
       return `
         <div class="overlay" data-action="close-drawer"></div>
         <div class="drawer-shell">
-          <aside class="drawer detail-drawer" role="dialog" aria-modal="true">
-            <header class="drawer-head detail-toolbar">
-              <div class="drawer-title detail-toolbar-title">タスク詳細</div>
+          <aside class="drawer detail-drawer" role="dialog" aria-modal="true" aria-label="タスク詳細">
+            <div class="detail-floating-actions">
               ${state.savingNodeIds.has(node.id) ? '<span class="chip">保存中</span>' : ''}
               <button class="button ghost icon" data-action="close-drawer" title="閉じる" aria-label="詳細を閉じる">${icon('x')}</button>
-            </header>
+            </div>
             <div class="drawer-body detail-drawer-body">
               <main class="detail-main">
                 <section class="detail-title-section">
