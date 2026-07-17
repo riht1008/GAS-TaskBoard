@@ -626,11 +626,12 @@
       if (action === 'members') return openMembersDialog();
       if (action === 'project-settings') return openProjectSettingsDialog(event.currentTarget.dataset.tab);
       if (action === 'project-settings-tab') return switchProjectSettingsTab(event.currentTarget.dataset.tab);
+      if (action === 'set-slack-delivery-mode') return setSlackDeliveryMode(event.currentTarget.dataset.mode);
       if (action === 'save-project-setting') return saveProjectSettingsDraft();
       if (action === 'clear-project-setting') return clearProjectSettingsDraft();
       if (action === 'reset-slack-template') return resetSlackTemplate(event.currentTarget.dataset.templateField);
-      if (action === 'test-slack') return testSlackSettingsConnection();
-      if (action === 'disconnect-slack') return confirmSlackDisconnect();
+      if (action === 'test-slack') return testSlackSettingsConnection(event.currentTarget.dataset.slackTarget);
+      if (action === 'disconnect-slack') return confirmSlackDisconnect(event.currentTarget.dataset.slackTarget);
       if (action === 'disconnect-slack-confirmed') return disconnectSlackSettings();
       if (action === 'clear-local-cache') return clearLocalCache();
       if (action === 'edit-milestone') return editMilestoneDraft(event.currentTarget.dataset.milestoneId);

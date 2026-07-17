@@ -621,7 +621,10 @@
       if (tab === 'meetings') return defaultMeetingDraftFields();
       if (tab === 'slack') {
         return {
-          webhookUrl: '',
+          deliveryMode: state.slackSettings.deliveryMode || '',
+          appWebhookUrl: '',
+          workflowStatusWebhookUrl: '',
+          workflowMentionWebhookUrl: '',
           statusChangeEnabled: state.slackSettings.statusChangeEnabled !== false,
           mentionEnabled: state.slackSettings.mentionEnabled === true,
           statusTemplate: state.slackSettings.statusTemplate || SLACK_DEFAULT_STATUS_TEMPLATE,
@@ -629,6 +632,14 @@
         };
       }
       return { milestoneId: '', name: '', date: '', note: '' };
+    }
+
+    function setSlackDeliveryMode(mode) {
+      const dialog = state.dialog;
+      if (!dialog || dialog.type !== 'projectSettings' || state.projectSettingsTab !== 'slack') return;
+      dialog.draft.deliveryMode = mode === 'app' ? 'app' : 'workflow';
+      if (dialog.drafts) dialog.drafts.slack = dialog.draft;
+      render();
     }
 
     function normalizeProjectSettingsTab(tab) {
@@ -698,16 +709,60 @@
       const dialog = state.dialog;
       if (!dialog || dialog.type !== 'projectSettings') return;
       const draft = { ...dialog.draft };
+      if (draft.deliveryMode !== 'app' && draft.deliveryMode !== 'workflow') {
+        showToast('Slack通知方式を選択してください', 'error');
+        return;
+      }
+      const statusEnabled = draft.statusChangeEnabled !== false;
+      const mentionEnabled = draft.mentionEnabled === true;
+      if (draft.deliveryMode === 'app'
+        && (statusEnabled || mentionEnabled)
+        && !cleanText(draft.appWebhookUrl)
+        && !state.slackSettings.appConfigured) {
+        showToast('Incoming Webhook URLを入力してください', 'error');
+        return;
+      }
+      if (draft.deliveryMode === 'workflow'
+        && statusEnabled
+        && !cleanText(draft.workflowStatusWebhookUrl)
+        && !state.slackSettings.workflowStatusConfigured) {
+        showToast('ステータス通知のWorkflow URLを入力してください', 'error');
+        return;
+      }
+      if (draft.deliveryMode === 'workflow'
+        && mentionEnabled
+        && !cleanText(draft.workflowMentionWebhookUrl)
+        && !state.slackSettings.workflowMentionConfigured) {
+        showToast('メンション通知のWorkflow URLを入力してください', 'error');
+        return;
+      }
       const previous = { ...state.slackSettings };
+      dialog.submitting = true;
+      dialog.slackAction = 'save';
+      render();
       queueBackgroundMutation('slack-settings', 'saveSlackSettings', {
-        webhookUrl: cleanText(draft.webhookUrl),
+        deliveryMode: draft.deliveryMode,
+        appWebhookUrl: cleanText(draft.appWebhookUrl),
+        workflowStatusWebhookUrl: cleanText(draft.workflowStatusWebhookUrl),
+        workflowMentionWebhookUrl: cleanText(draft.workflowMentionWebhookUrl),
         statusChangeEnabled: draft.statusChangeEnabled !== false,
         mentionEnabled: draft.mentionEnabled === true,
         statusTemplate: cleanText(draft.statusTemplate) || SLACK_DEFAULT_STATUS_TEMPLATE,
         mentionTemplate: cleanText(draft.mentionTemplate) || SLACK_DEFAULT_MENTION_TEMPLATE
       }, () => {
+        const nextAppConfigured = Boolean(cleanText(draft.appWebhookUrl)) || state.slackSettings.appConfigured;
+        const nextWorkflowStatusConfigured = Boolean(cleanText(draft.workflowStatusWebhookUrl)) || state.slackSettings.workflowStatusConfigured;
+        const nextWorkflowMentionConfigured = Boolean(cleanText(draft.workflowMentionWebhookUrl)) || state.slackSettings.workflowMentionConfigured;
         state.slackSettings = Object.assign({}, state.slackSettings, {
-          configured: Boolean(cleanText(draft.webhookUrl)) || state.slackSettings.configured,
+          deliveryMode: draft.deliveryMode,
+          appConfigured: nextAppConfigured,
+          workflowStatusConfigured: nextWorkflowStatusConfigured,
+          workflowMentionConfigured: nextWorkflowMentionConfigured,
+          configured: draft.deliveryMode === 'app'
+            ? (statusEnabled || mentionEnabled) && nextAppConfigured
+            : (statusEnabled || mentionEnabled)
+              && (draft.statusChangeEnabled === false || nextWorkflowStatusConfigured)
+              && (draft.mentionEnabled !== true || nextWorkflowMentionConfigured),
           statusChangeEnabled: draft.statusChangeEnabled !== false,
           mentionEnabled: draft.mentionEnabled === true,
           statusTemplate: cleanText(draft.statusTemplate) || SLACK_DEFAULT_STATUS_TEMPLATE,
@@ -717,8 +772,18 @@
         state.slackSettings = previous;
       }, {
         onSuccess: () => {
-          if (state.dialog === dialog) dialog.draft.webhookUrl = '';
+          if (state.dialog === dialog) {
+            dialog.draft.appWebhookUrl = '';
+            dialog.draft.workflowStatusWebhookUrl = '';
+            dialog.draft.workflowMentionWebhookUrl = '';
+          }
           showToast('Slack通知設定を保存しました', 'success');
+        },
+        onFinally: () => {
+          if (state.dialog === dialog) {
+            dialog.submitting = false;
+            dialog.slackAction = '';
+          }
         }
       });
     }
@@ -732,34 +797,54 @@
       render();
     }
 
-    function testSlackSettingsConnection() {
-      if (!state.dialog || state.dialog.type !== 'projectSettings') return;
-      state.dialog.submitting = true;
+    function testSlackSettingsConnection(target) {
+      const dialog = state.dialog;
+      if (!dialog || dialog.type !== 'projectSettings') return;
+      dialog.submitting = true;
+      dialog.slackAction = 'test:' + cleanText(target);
       render();
-      return queueBackgroundMutation('slack-settings', 'testSlackConnection', {}, null, null, {
+      return queueBackgroundMutation('slack-settings', 'testSlackConnection', { target: cleanText(target) }, null, null, {
         onResult: result => {
           if (result && result.ok) {
             showToast(result.message || 'Slackへテスト通知を送信しました', 'success');
           }
         },
         onFinally: () => {
-          if (state.dialog && state.dialog.type === 'projectSettings') state.dialog.submitting = false;
+          if (state.dialog === dialog) {
+            dialog.submitting = false;
+            dialog.slackAction = '';
+          }
         }
       });
     }
 
-    function confirmSlackDisconnect() {
-      if (!state.slackSettings || !state.slackSettings.configured) return;
-      openContextualConfirm({ type: 'confirmSlackDisconnect' });
+    function confirmSlackDisconnect(target) {
+      const selectedTarget = target === 'app' ? 'app' : 'workflow';
+      const configured = selectedTarget === 'app'
+        ? state.slackSettings && state.slackSettings.appConfigured
+        : state.slackSettings && (state.slackSettings.workflowStatusConfigured || state.slackSettings.workflowMentionConfigured);
+      if (!configured) return;
+      openContextualConfirm({ type: 'confirmSlackDisconnect', slackTarget: selectedTarget });
     }
 
     function disconnectSlackSettings() {
+      const target = state.dialog && state.dialog.slackTarget === 'app' ? 'app' : 'workflow';
       const previous = { ...state.slackSettings };
       closeDialog(false);
-      queueBackgroundMutation('slack-settings', 'disconnectSlack', {}, () => {
-        state.slackSettings = Object.assign({}, state.slackSettings, {
-          configured: false,
-          maskedWebhookUrl: '',
+      queueBackgroundMutation('slack-settings', 'disconnectSlack', { target }, () => {
+        const patch = target === 'app' ? {
+          appConfigured: false,
+          maskedAppWebhookUrl: ''
+        } : {
+          workflowStatusConfigured: false,
+          maskedWorkflowStatusWebhookUrl: '',
+          workflowStatusLegacy: false,
+          workflowMentionConfigured: false,
+          maskedWorkflowMentionWebhookUrl: '',
+          workflowMentionLegacy: false
+        };
+        state.slackSettings = Object.assign({}, state.slackSettings, patch, {
+          configured: state.slackSettings.deliveryMode === target ? false : state.slackSettings.configured,
           lastSuccessAt: '',
           lastErrorAt: '',
           lastError: '',

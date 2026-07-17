@@ -14,6 +14,8 @@ const {
   slackMentionedUsers_,
   slackWebhookType_,
   slackRequestPayload_,
+  slackWorkflowRequestPayloads_,
+  maskedSlackWebhook_,
   normalizeSlackTemplate_,
   renderSlackTemplate_,
   saveSlackSettings,
@@ -69,6 +71,59 @@ test('Slack webhook variants use the payload shape expected by each endpoint', (
   assert.equal(slackWebhookType_('https://example.test/hook'), '');
   assert.deepEqual(slackRequestPayload_(incomingUrl, payload), payload);
   assert.deepEqual(slackRequestPayload_(workflowUrl, payload), { text: '通知' });
+  assert.equal(maskedSlackWebhook_(incomingUrl), 'https://hooks.slack.com/services/••••••');
+  assert.doesNotMatch(maskedSlackWebhook_(incomingUrl), /\/T\/B\/X$/);
+});
+
+test('Workflow Builder receives flat variables and one mention request per Slack member', () => {
+  const statusPayloads = slackWorkflowRequestPayloads_({
+    text: 'legacy text',
+    workflow: {
+      type: 'status',
+      fields: {
+        notification_title: 'ステータス変更',
+        task_name: '設計',
+        parent_path: '案件 > UI',
+        before_status: '未着手',
+        after_status: '進行中',
+        actor_name: '鈴木',
+        web_app_url: 'https://example.test/app'
+      }
+    }
+  }, 'status', false);
+  assert.deepEqual(statusPayloads, [{
+    notification_title: 'ステータス変更',
+    task_name: '設計',
+    parent_path: '案件 &gt; UI',
+    before_status: '未着手',
+    after_status: '進行中',
+    actor_name: '鈴木',
+    web_app_url: 'https://example.test/app'
+  }]);
+
+  const mentionPayloads = slackWorkflowRequestPayloads_({
+    text: 'legacy mention',
+    workflow: {
+      type: 'mention',
+      fields: {
+        notification_title: 'メンション',
+        task_name: '確認',
+        parent_path: '案件',
+        actor_name: '田中',
+        comment_text: '<!channel> お願いします',
+        web_app_url: 'https://example.test/app'
+      },
+      recipients: [
+        { slackUserId: 'U012ABC', name: '鈴木' },
+        { slackUserId: 'W987XYZ', name: '佐藤' }
+      ]
+    }
+  }, 'mention', false);
+  assert.equal(mentionPayloads.length, 2);
+  assert.equal(mentionPayloads[0].mentioned_user_id, 'U012ABC');
+  assert.equal(mentionPayloads[1].mentioned_user_id, 'W987XYZ');
+  assert.equal(mentionPayloads[0].comment_text, '&lt;!channel&gt; お願いします');
+  assert.deepEqual(slackWorkflowRequestPayloads_({ text: '旧形式' }, 'status', true), [{ text: '旧形式' }]);
 });
 
 test('Slack settings reject unknown template placeholders', () => {
@@ -131,5 +186,21 @@ test('Slack settings persist independent choices and editable templates with leg
     webhookUrl: 'https://hooks.slack.com/triggers/T/B/X'
   });
   assert.equal(workflowResult.slackSettings.webhookType, 'workflow');
+  assert.equal(workflowResult.slackSettings.workflowStatusLegacy, true);
+  assert.equal(workflowResult.slackSettings.workflowMentionLegacy, true);
+
+  const splitWorkflowResult = saveSlackSettings({
+    deliveryMode: 'workflow',
+    workflowStatusWebhookUrl: 'https://hooks.slack.com/triggers/T/B/STATUS',
+    workflowMentionWebhookUrl: 'https://hooks.slack.com/triggers/T/B/MENTION',
+    statusChangeEnabled: true,
+    mentionEnabled: true
+  });
+  assert.equal(splitWorkflowResult.slackSettings.deliveryMode, 'workflow');
+  assert.equal(splitWorkflowResult.slackSettings.workflowStatusConfigured, true);
+  assert.equal(splitWorkflowResult.slackSettings.workflowMentionConfigured, true);
+  assert.equal(splitWorkflowResult.slackSettings.workflowStatusLegacy, false);
+  assert.equal(splitWorkflowResult.slackSettings.workflowMentionLegacy, false);
+  assert.doesNotMatch(splitWorkflowResult.slackSettings.maskedWorkflowStatusWebhookUrl, /STATUS/);
   assert.throws(() => saveSlackSettings({ webhookUrl: 'https://example.test/hook' }), /形式/);
 });

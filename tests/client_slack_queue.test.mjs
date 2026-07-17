@@ -13,7 +13,7 @@ const panelsSource = fs.readFileSync(new URL('../src/ClientRenderPanels.html', i
 const stateSource = fs.readFileSync(new URL('../src/ClientState.html', import.meta.url), 'utf8');
 
 function slackTestSource() {
-  const start = actionsSource.indexOf('    function testSlackSettingsConnection()');
+  const start = actionsSource.indexOf('    function testSlackSettingsConnection(target)');
   const end = actionsSource.indexOf('    function disconnectSlackSettings()', start);
   if (start < 0 || end < 0) throw new Error('Slack test action not found');
   return actionsSource.slice(start, end);
@@ -24,6 +24,7 @@ test('Slack connection test is queued behind settings saves', () => {
   const state = { dialog: { type: 'projectSettings', submitting: false } };
   const context = vm.createContext({
     state,
+    cleanText: value => String(value || '').trim(),
     render: () => {},
     showToast: () => {},
     queueBackgroundMutation: (...args) => {
@@ -33,12 +34,14 @@ test('Slack connection test is queued behind settings saves', () => {
   });
   vm.runInContext(slackTestSource(), context);
 
-  context.testSlackSettingsConnection();
+  context.testSlackSettingsConnection('workflowStatus');
 
   assert.equal(state.dialog.submitting, true);
   assert.equal(calls.length, 1);
   assert.equal(calls[0][0], 'slack-settings');
   assert.equal(calls[0][1], 'testSlackConnection');
+  assert.equal(calls[0][2].target, 'workflowStatus');
+  assert.equal(state.dialog.slackAction, 'test:workflowStatus');
 });
 
 test('Slack settings expose independent notification choices and editable default templates', () => {
@@ -48,10 +51,16 @@ test('Slack settings expose independent notification choices and editable defaul
   assert.match(actionsSource, /statusTemplate: cleanText\(draft\.statusTemplate\)/);
   assert.match(actionsSource, /mentionTemplate: cleanText\(draft\.mentionTemplate\)/);
   assert.match(bindingsSource, /action === 'reset-slack-template'/);
+  assert.match(bindingsSource, /action === 'set-slack-delivery-mode'/);
   assert.match(panelsSource, /data-draft-field="mentionEnabled"/);
   assert.match(panelsSource, /data-draft-field="statusTemplate"/);
   assert.match(panelsSource, /data-draft-field="mentionTemplate"/);
   assert.match(panelsSource, /hooks\.slack\.com\/triggers/);
+  assert.match(panelsSource, /project-settings-nav/);
+  assert.match(panelsSource, /slack-mode-card/);
+  assert.match(panelsSource, /保存中のURL/);
+  assert.match(panelsSource, /保存しています…/);
+  assert.match(panelsSource, /mentioned_user_id/);
   assert.match(panelsSource, /data-draft-field="slackUserId"/);
   assert.match(panelsSource, /\{mentionedUsers\}/);
   assert.match(panelsSource, /デフォルトに戻す/);
