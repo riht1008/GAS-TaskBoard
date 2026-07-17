@@ -43,6 +43,8 @@ test('detail drawer uses one task title and compact property rows', () => {
   assert.match(panels, /function renderDetailPropertyRow/);
   assert.match(panels, /field: 'statusColumnId'[\s\S]{0,180}plain: true/);
   assert.match(styles, /\.detail-property-row \{[\s\S]*grid-template-columns:/);
+  assert.doesNotMatch(panels, /detail-summary/);
+  assert.doesNotMatch(panels, /detail-status-badge/);
 });
 
 test('description has explicit read and edit modes with Escape returning to read mode', () => {

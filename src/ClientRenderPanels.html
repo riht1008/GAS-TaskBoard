@@ -8,7 +8,6 @@
       const childNodes = childrenOf(node.id);
       const parent = node.parentId ? state.nodesById.get(node.parentId) : null;
       const doneColumnId = doneStatusColumnId();
-      const statusColumn = state.statusColumns.find(column => column.id === draft.statusColumnId);
       const progressValue = draft.statusColumnId === doneColumnId ? 100 : normalizeProgressValue(draft.progress) === null ? 0 : normalizeProgressValue(draft.progress);
       const ancestorExcluded = hasWbsExcludedAncestor(node.id);
       const inferredActualRange = formatRange(node.inferredActualStartDate || '', node.inferredActualEndDate || '');
@@ -30,12 +29,6 @@
               <main class="detail-main">
                 <section class="detail-title-section">
                   <textarea class="textarea task-name-textarea detail-name-textarea" rows="1" aria-label="タスク名" data-detail-name-input data-draft-scope="detail" data-draft-field="name" ${state.currentMember ? '' : 'readonly'}>${h(draft.name)}</textarea>
-                  <div class="detail-summary" aria-label="タスクの概要">
-                    ${statusColumn ? `<span class="detail-status-badge"><span class="color-dot" style="background:${h(statusColumn.color || defaultStatusColor(statusColumn))}"></span>${h(statusColumn.name)}</span>` : ''}
-                    <span class="chip">進捗 ${Math.round(node.hasChildren ? node.progress : progressValue)}%</span>
-                    ${node.displayStartDate || node.displayEndDate ? `<span class="mono">${h(formatRange(node.displayStartDate, node.displayEndDate))}</span>` : ''}
-                    ${draft.includeInWbs === false ? '<span class="chip">WBS外</span>' : ''}
-                  </div>
                 </section>
                 <section class="detail-content-section detail-description-section">
                   <div class="detail-content-card">
