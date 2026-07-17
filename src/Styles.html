@@ -1830,9 +1830,12 @@
     .column-body {
       min-height: 0;
       display: grid;
+      grid-auto-rows: max-content;
       align-content: start;
       gap: var(--space-3);
       overflow: auto;
+      overscroll-behavior: contain;
+      scrollbar-gutter: stable;
       padding: var(--space-3);
     }
 
@@ -1860,6 +1863,7 @@
 
     .task-card {
       position: relative;
+      min-height: calc(var(--space-12) + var(--space-6));
       display: grid;
       gap: var(--space-2);
       border: 1px solid var(--color-border);
@@ -1891,6 +1895,7 @@
     }
 
     .task-card-title {
+      min-height: 1.45em;
       display: -webkit-box;
       -webkit-box-orient: vertical;
       -webkit-line-clamp: 3;

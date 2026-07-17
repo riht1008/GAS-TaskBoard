@@ -2,7 +2,7 @@
  * Shared configuration and sheet schema.
  */
 
-var APP_VERSION = '1.6.0';
+var APP_VERSION = '1.6.1';
 var LOCK_WAIT_MS = 15000;
 var DAY_MS = 24 * 60 * 60 * 1000;
 var DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
