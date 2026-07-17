@@ -124,6 +124,8 @@
         priority: config.priority || 'Mid',
         startDate: config.startDate || '',
         endDate: config.endDate || '',
+        actualStartDate: config.actualStartDate || '',
+        actualEndDate: config.actualEndDate || '',
         description: config.description || '',
         deliverable: config.deliverable || '',
         note: config.note || '',
@@ -138,6 +140,9 @@
         displayEndDate: config.endDate || '',
         hasChildren: false,
         isLeaf: true,
+        actualDatesLoaded: true,
+        inferredActualStartDate: '',
+        inferredActualEndDate: '',
         isDraft: config.isDraft === true,
         draftOwner: config.isDraft && state.currentMember ? state.currentMember.id : '',
         draftExpiresAt: config.isDraft ? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() : ''
@@ -529,7 +534,10 @@
       if (tab === 'slack') {
         return {
           webhookUrl: '',
-          statusChangeEnabled: state.slackSettings.statusChangeEnabled !== false
+          statusChangeEnabled: state.slackSettings.statusChangeEnabled !== false,
+          mentionEnabled: state.slackSettings.mentionEnabled === true,
+          statusTemplate: state.slackSettings.statusTemplate || SLACK_DEFAULT_STATUS_TEMPLATE,
+          mentionTemplate: state.slackSettings.mentionTemplate || SLACK_DEFAULT_MENTION_TEMPLATE
         };
       }
       return { milestoneId: '', name: '', date: '', note: '' };
@@ -605,18 +613,35 @@
       const previous = { ...state.slackSettings };
       queueBackgroundMutation('slack-settings', 'saveSlackSettings', {
         webhookUrl: cleanText(draft.webhookUrl),
-        statusChangeEnabled: draft.statusChangeEnabled !== false
+        statusChangeEnabled: draft.statusChangeEnabled !== false,
+        mentionEnabled: draft.mentionEnabled === true,
+        statusTemplate: cleanText(draft.statusTemplate) || SLACK_DEFAULT_STATUS_TEMPLATE,
+        mentionTemplate: cleanText(draft.mentionTemplate) || SLACK_DEFAULT_MENTION_TEMPLATE
       }, () => {
         state.slackSettings = Object.assign({}, state.slackSettings, {
           configured: Boolean(cleanText(draft.webhookUrl)) || state.slackSettings.configured,
-          statusChangeEnabled: draft.statusChangeEnabled !== false
+          statusChangeEnabled: draft.statusChangeEnabled !== false,
+          mentionEnabled: draft.mentionEnabled === true,
+          statusTemplate: cleanText(draft.statusTemplate) || SLACK_DEFAULT_STATUS_TEMPLATE,
+          mentionTemplate: cleanText(draft.mentionTemplate) || SLACK_DEFAULT_MENTION_TEMPLATE
         });
-        dialog.draft.webhookUrl = '';
       }, () => {
         state.slackSettings = previous;
       }, {
-        onSuccess: () => showToast('Slack通知設定を保存しました', 'success')
+        onSuccess: () => {
+          if (state.dialog === dialog) dialog.draft.webhookUrl = '';
+          showToast('Slack通知設定を保存しました', 'success');
+        }
       });
+    }
+
+    function resetSlackTemplate(field) {
+      const dialog = state.dialog;
+      if (!dialog || dialog.type !== 'projectSettings' || state.projectSettingsTab !== 'slack') return;
+      if (field === 'statusTemplate') dialog.draft.statusTemplate = SLACK_DEFAULT_STATUS_TEMPLATE;
+      if (field === 'mentionTemplate') dialog.draft.mentionTemplate = SLACK_DEFAULT_MENTION_TEMPLATE;
+      if (dialog.drafts) dialog.drafts.slack = dialog.draft;
+      render();
     }
 
     function testSlackSettingsConnection() {
@@ -1026,6 +1051,8 @@
         assigneeIds: (node.assigneeIds || []).slice(),
         startDate: node.startDate || '',
         endDate: node.endDate || '',
+        actualStartDate: node.actualStartDate || '',
+        actualEndDate: node.actualEndDate || '',
         description: node.description || '',
         deliverable: node.deliverable || '',
         note: node.note || '',
@@ -1042,6 +1069,8 @@
         assigneeIds: (draft.assigneeIds || []).slice(),
         startDate: draft.startDate || '',
         endDate: draft.endDate || '',
+        actualStartDate: draft.actualStartDate || '',
+        actualEndDate: draft.actualEndDate || '',
         description: draft.description || '',
         deliverable: draft.deliverable || '',
         note: draft.note || '',
@@ -1058,6 +1087,8 @@
         assigneeIds: snapshot.assigneeIds.slice(),
         startDate: snapshot.startDate,
         endDate: snapshot.endDate,
+        actualStartDate: snapshot.actualStartDate,
+        actualEndDate: snapshot.actualEndDate,
         description: snapshot.description,
         deliverable: snapshot.deliverable,
         note: snapshot.note,
@@ -1072,6 +1103,8 @@
         && a.priority === b.priority
         && a.startDate === b.startDate
         && a.endDate === b.endDate
+        && a.actualStartDate === b.actualStartDate
+        && a.actualEndDate === b.actualEndDate
         && a.description === b.description
         && a.deliverable === b.deliverable
         && a.note === b.note
@@ -1107,6 +1140,8 @@
         assigneeIds: node.assigneeIds.slice(),
         startDate: node.startDate,
         endDate: node.endDate,
+        actualStartDate: node.actualStartDate || '',
+        actualEndDate: node.actualEndDate || '',
         description: node.description,
         deliverable: node.deliverable || '',
         note: node.note || '',
@@ -1148,6 +1183,8 @@
         assigneeIds: draft.assigneeIds,
         startDate: draft.startDate,
         endDate: draft.endDate,
+        actualStartDate: draft.actualStartDate,
+        actualEndDate: draft.actualEndDate,
         description: draft.description,
         deliverable: draft.deliverable,
         note: draft.note,
@@ -1220,6 +1257,8 @@
         assigneeIds: snapshot.assigneeIds.slice(),
         startDate: snapshot.startDate,
         endDate: snapshot.endDate,
+        actualStartDate: snapshot.actualStartDate,
+        actualEndDate: snapshot.actualEndDate,
         description: snapshot.description,
         deliverable: snapshot.deliverable,
         note: snapshot.note,
@@ -1531,6 +1570,28 @@
         showToast(error.message, 'error');
       } finally {
         state.commentsLoading.delete(nodeId);
+        if (state.drawerNodeId === nodeId) render();
+      }
+    }
+
+    async function loadNodeActualDates(nodeId) {
+      const node = state.nodesById.get(nodeId);
+      if (!node || node.actualDatesLoaded || state.actualDatesLoading.has(nodeId)) return;
+      state.actualDatesLoading.add(nodeId);
+      try {
+        const result = await serverCall('getNodeActualDates', { nodeId });
+        const latest = state.nodesById.get(nodeId);
+        if (latest) {
+          latest.inferredActualStartDate = normalizeClientDateText(result.inferredActualStartDate);
+          latest.inferredActualEndDate = normalizeClientDateText(result.inferredActualEndDate);
+          latest.actualDatesLoaded = true;
+        }
+      } catch (error) {
+        const latest = state.nodesById.get(nodeId);
+        if (latest) latest.actualDatesLoaded = true;
+        console.error('実績日の自動算出を読み込めませんでした', error);
+      } finally {
+        state.actualDatesLoading.delete(nodeId);
         if (state.drawerNodeId === nodeId) render();
       }
     }

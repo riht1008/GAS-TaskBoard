@@ -5,6 +5,29 @@
 var SLACK_WEBHOOK_KEY = 'SLACK_WEBHOOK_URL';
 var SLACK_SETTINGS_KEY = 'SLACK_NOTIFICATION_SETTINGS';
 var SLACK_DELIVERY_KEY = 'SLACK_DELIVERY_STATUS';
+var SLACK_TEMPLATE_MAX_LENGTH = 2000;
+var SLACK_RENDERED_MESSAGE_MAX_LENGTH = 3000;
+var SLACK_COMMENT_EXCERPT_MAX_LENGTH = 1200;
+var SLACK_STATUS_TEMPLATE_KEYS = ['taskName', 'parentPath', 'beforeStatus', 'afterStatus', 'actorName', 'webAppUrl'];
+var SLACK_MENTION_TEMPLATE_KEYS = ['taskName', 'parentPath', 'mentionedNames', 'actorName', 'commentText', 'webAppUrl'];
+var SLACK_DEFAULT_STATUS_TEMPLATE = [
+  '*タスクのステータスが変更されました*',
+  '*タスク*: {taskName}',
+  '*親パス*: {parentPath}',
+  '*変更*: {beforeStatus} → {afterStatus}',
+  '*実行者*: {actorName}',
+  '*Webアプリ*: {webAppUrl}'
+].join('\n');
+var SLACK_DEFAULT_MENTION_TEMPLATE = [
+  '*コメントでメンションされました*',
+  '*タスク*: {taskName}',
+  '*親パス*: {parentPath}',
+  '*メンション対象*: {mentionedNames}',
+  '*投稿者*: {actorName}',
+  '*コメント*',
+  '{commentText}',
+  '*Webアプリ*: {webAppUrl}'
+].join('\n');
 
 function buildStatusChangeNotification_(node, beforeColumn, afterColumn, actor, rows) {
   const beforeName = beforeColumn ? cleanString_(beforeColumn.Name) : '未設定';
@@ -12,41 +35,67 @@ function buildStatusChangeNotification_(node, beforeColumn, afterColumn, actor, 
   const actorName = actor ? cleanString_(actor.Name) : '不明';
   const path = parentPath_(node, activeNodes_(rows.nodes));
   const webAppUrl = webAppUrl_();
-  const lines = [
-    'タスクのステータスが変更されました',
-    'タスク: ' + cleanString_(node.Name),
-    path ? '親パス: ' + path : '',
-    '変更: ' + beforeName + ' -> ' + afterName,
-    '実行者: ' + actorName,
-    webAppUrl ? 'URL: ' + webAppUrl : ''
-  ].filter(Boolean);
+  const settings = slackNotificationSettings_();
+  return buildSlackTemplatePayload_(settings.statusTemplate, {
+    taskName: cleanString_(node.Name),
+    parentPath: path || '-',
+    beforeStatus: beforeName,
+    afterStatus: afterName,
+    actorName: actorName,
+    webAppUrl: webAppUrl || '-'
+  }, SLACK_DEFAULT_STATUS_TEMPLATE, SLACK_STATUS_TEMPLATE_KEYS);
+}
+
+function buildMentionNotification_(node, comment, actor, mentionedMembers, rows) {
+  const path = parentPath_(node, activeNodes_(rows.nodes));
+  const webAppUrl = webAppUrl_();
+  const settings = slackNotificationSettings_();
+  return buildSlackTemplatePayload_(settings.mentionTemplate, {
+    taskName: cleanString_(node.Name),
+    parentPath: path || '-',
+    mentionedNames: (mentionedMembers || []).map(function (member) { return cleanString_(member.Name); }).filter(Boolean).join(', ') || '-',
+    actorName: actor ? cleanString_(actor.Name) : '不明',
+    commentText: cleanString_(comment.Text).slice(0, SLACK_COMMENT_EXCERPT_MAX_LENGTH),
+    webAppUrl: webAppUrl || '-'
+  }, SLACK_DEFAULT_MENTION_TEMPLATE, SLACK_MENTION_TEMPLATE_KEYS);
+}
+
+function buildSlackTemplatePayload_(template, variables, fallback, allowedKeys) {
+  const text = renderSlackTemplate_(template, variables, fallback, allowedKeys);
   return {
-    text: lines.join('\n'),
-    blocks: [
-      {
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: '*タスクのステータスが変更されました*'
-        }
-      },
-      {
-        type: 'section',
-        fields: [
-          { type: 'mrkdwn', text: '*タスク*\n' + slackEscape_(cleanString_(node.Name)) },
-          { type: 'mrkdwn', text: '*変更*\n' + slackEscape_(beforeName) + ' -> ' + slackEscape_(afterName) },
-          { type: 'mrkdwn', text: '*実行者*\n' + slackEscape_(actorName) },
-          { type: 'mrkdwn', text: '*親パス*\n' + slackEscape_(path || '-') }
-        ]
-      }
-    ].concat(webAppUrl ? [{
+    text: text,
+    blocks: [{
       type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: '<' + webAppUrl + '|Webアプリを開く>'
-      }
-    }] : [])
+      text: { type: 'mrkdwn', text: text }
+    }]
   };
+}
+
+function renderSlackTemplate_(template, variables, fallback, allowedKeys) {
+  const normalized = normalizeSlackTemplate_(template, fallback, allowedKeys, false);
+  const values = variables || {};
+  return normalized.replace(/\{([A-Za-z][A-Za-z0-9]*)\}/g, function (match, key) {
+    return Object.prototype.hasOwnProperty.call(values, key) ? slackEscape_(values[key]) : match;
+  }).slice(0, SLACK_RENDERED_MESSAGE_MAX_LENGTH);
+}
+
+function normalizeSlackTemplate_(value, fallback, allowedKeys, strict) {
+  const text = cleanString_(value);
+  if (!text) return fallback;
+  if (text.length > SLACK_TEMPLATE_MAX_LENGTH) {
+    if (strict) throw new Error('Slack通知テンプレートは' + SLACK_TEMPLATE_MAX_LENGTH + '文字以内で入力してください。');
+    return fallback;
+  }
+  const allowed = {};
+  (allowedKeys || []).forEach(function (key) { allowed[key] = true; });
+  const unknown = (text.match(/\{[^{}\r\n]+\}/g) || [])
+    .map(function (token) { return token.slice(1, -1); })
+    .filter(function (key) { return !allowed[key]; });
+  if (unknown.length) {
+    if (strict) throw new Error('未対応のSlack通知プレースホルダーです: {' + unique_(unknown).join('}, {') + '}');
+    return fallback;
+  }
+  return text;
 }
 
 function postToSlack_(payload, options) {
@@ -55,7 +104,8 @@ function postToSlack_(payload, options) {
   try {
     const settings = slackNotificationSettings_();
     const webhookUrl = properties.getProperty(SLACK_WEBHOOK_KEY);
-    if ((!settings.statusChangeEnabled && options.force !== true) || !webhookUrl || !payload) {
+    const notificationEnabled = slackNotificationEnabled_(settings, options);
+    if (!notificationEnabled || !webhookUrl || !payload) {
       return { ok: true, skipped: true };
     }
     const response = UrlFetchApp.fetch(webhookUrl, {
@@ -82,6 +132,13 @@ function postToSlack_(payload, options) {
   }
 }
 
+function slackNotificationEnabled_(settings, options) {
+  settings = settings || {};
+  options = options || {};
+  return options.force === true
+    || (options.type === 'mention' ? settings.mentionEnabled === true : settings.statusChangeEnabled !== false);
+}
+
 function getSlackSettings() {
   requireSchemaExists_();
   requireCurrentMember_();
@@ -99,8 +156,20 @@ function saveSlackSettings(payload) {
       throw new Error('Slack Incoming Webhook URL の形式が正しくありません。');
     }
     if (webhookUrl) properties.setProperty(SLACK_WEBHOOK_KEY, webhookUrl);
+    const current = slackNotificationSettings_();
     properties.setProperty(SLACK_SETTINGS_KEY, JSON.stringify({
-      statusChangeEnabled: payload.statusChangeEnabled !== false
+      statusChangeEnabled: Object.prototype.hasOwnProperty.call(payload, 'statusChangeEnabled')
+        ? payload.statusChangeEnabled !== false
+        : current.statusChangeEnabled,
+      mentionEnabled: Object.prototype.hasOwnProperty.call(payload, 'mentionEnabled')
+        ? payload.mentionEnabled === true
+        : current.mentionEnabled,
+      statusTemplate: Object.prototype.hasOwnProperty.call(payload, 'statusTemplate')
+        ? normalizeSlackTemplate_(payload.statusTemplate, SLACK_DEFAULT_STATUS_TEMPLATE, SLACK_STATUS_TEMPLATE_KEYS, true)
+        : current.statusTemplate,
+      mentionTemplate: Object.prototype.hasOwnProperty.call(payload, 'mentionTemplate')
+        ? normalizeSlackTemplate_(payload.mentionTemplate, SLACK_DEFAULT_MENTION_TEMPLATE, SLACK_MENTION_TEMPLATE_KEYS, true)
+        : current.mentionTemplate
     }));
     return { ok: true, slackSettings: publicSlackSettings_() };
   });
@@ -143,9 +212,19 @@ function slackNotificationSettings_() {
   const raw = PropertiesService.getScriptProperties().getProperty(SLACK_SETTINGS_KEY);
   try {
     const parsed = JSON.parse(raw || '{}');
-    return { statusChangeEnabled: parsed.statusChangeEnabled !== false };
+    return {
+      statusChangeEnabled: parsed.statusChangeEnabled !== false,
+      mentionEnabled: parsed.mentionEnabled === true,
+      statusTemplate: normalizeSlackTemplate_(parsed.statusTemplate, SLACK_DEFAULT_STATUS_TEMPLATE, SLACK_STATUS_TEMPLATE_KEYS, false),
+      mentionTemplate: normalizeSlackTemplate_(parsed.mentionTemplate, SLACK_DEFAULT_MENTION_TEMPLATE, SLACK_MENTION_TEMPLATE_KEYS, false)
+    };
   } catch (error) {
-    return { statusChangeEnabled: true };
+    return {
+      statusChangeEnabled: true,
+      mentionEnabled: false,
+      statusTemplate: SLACK_DEFAULT_STATUS_TEMPLATE,
+      mentionTemplate: SLACK_DEFAULT_MENTION_TEMPLATE
+    };
   }
 }
 
@@ -163,11 +242,23 @@ function publicSlackSettings_() {
     configured: !!webhookUrl,
     maskedWebhookUrl: webhookUrl ? webhookUrl.slice(0, 34) + '••••••' : '',
     statusChangeEnabled: settings.statusChangeEnabled,
+    mentionEnabled: settings.mentionEnabled,
+    statusTemplate: settings.statusTemplate,
+    mentionTemplate: settings.mentionTemplate,
     lastSuccessAt: cleanString_(delivery.lastSuccessAt),
     lastErrorAt: cleanString_(delivery.lastErrorAt),
     lastError: cleanString_(delivery.lastError),
     lastResponseCode: Number(delivery.lastResponseCode) || 0
   };
+}
+
+function attachPublicSlackSettings_(payload) {
+  try {
+    if (payload) payload.slackSettings = publicSlackSettings_();
+  } catch (error) {
+    console.error('Slack public settings attachment failed: ' + cleanString_(error && error.message));
+  }
+  return payload;
 }
 
 function recordSlackDelivery_(result) {
@@ -181,8 +272,6 @@ function recordSlackDelivery_(result) {
     }
     if (result.ok) {
       delivery.lastSuccessAt = nowIso_();
-      delivery.lastError = '';
-      delivery.lastErrorAt = '';
     } else {
       delivery.lastErrorAt = nowIso_();
       delivery.lastError = cleanString_(result.message || result.responseText).slice(0, 500);
@@ -241,6 +330,16 @@ function slackEscape_(value) {
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
+    SLACK_DEFAULT_STATUS_TEMPLATE: SLACK_DEFAULT_STATUS_TEMPLATE,
+    SLACK_DEFAULT_MENTION_TEMPLATE: SLACK_DEFAULT_MENTION_TEMPLATE,
+    SLACK_STATUS_TEMPLATE_KEYS: SLACK_STATUS_TEMPLATE_KEYS,
+    SLACK_MENTION_TEMPLATE_KEYS: SLACK_MENTION_TEMPLATE_KEYS,
+    buildMentionNotification_: buildMentionNotification_,
+    normalizeSlackTemplate_: normalizeSlackTemplate_,
+    renderSlackTemplate_: renderSlackTemplate_,
+    saveSlackSettings: saveSlackSettings,
+    slackNotificationSettings_: slackNotificationSettings_,
+    slackNotificationEnabled_: slackNotificationEnabled_,
     slackDeliveryErrorMessage_: slackDeliveryErrorMessage_
   };
 }

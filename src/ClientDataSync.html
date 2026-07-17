@@ -387,6 +387,7 @@
         : [];
       if (result.ok === false) {
         if (Array.isArray(result.nodes)) mergeNodes(result.nodes);
+        if (result.slackSettings) state.slackSettings = Object.assign({}, state.slackSettings, result.slackSettings);
         rebuildIndexes();
         if (result.code === 'CONFLICT') {
           updateDetailDraftBaseAfterConflict(result);
@@ -458,7 +459,7 @@
 
     function mergeNodes(nodes) {
       const map = new Map(state.nodes.map(node => [node.id, node]));
-      nodes.forEach(node => map.set(node.id, node));
+      nodes.forEach(node => map.set(node.id, Object.assign({}, map.get(node.id) || {}, node)));
       state.nodes = Array.from(map.values());
     }
 

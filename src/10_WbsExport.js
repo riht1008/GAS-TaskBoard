@@ -319,13 +319,14 @@ function buildWbsModel_(rows, options) {
   const derivedState = computeWbsDerived_(nodes, statusColumns);
   const root = derivedState.root || nodes[0] || {};
   const visibleRows = filterWbsTree_(derivedState);
+  const actuals = deriveActuals_(logs, {
+    progressByNodeId: derivedState.progressByNodeId,
+    nodesById: derivedState.nodesById
+  });
   const maxDepth = Math.max(3, visibleRows.reduce(function (max, row) { return Math.max(max, row.depth); }, 0));
   const layout = buildWbsLayout_(maxDepth, meetings.length, visibleRows.length);
-  const dateRange = buildWbsDateRange_(visibleRows, derivedState.derived, options, milestones, meetings);
+  const dateRange = buildWbsDateRange_(visibleRows, derivedState.derived, options, milestones, meetings, actuals);
   layout.totalCols = layout.ganttStartCol + dateRange.dateColumns.length - 1;
-  const actuals = deriveActuals_(logs, {
-    progressByNodeId: derivedState.progressByNodeId
-  });
   const values = wbsEmptyMatrix_(layout.totalRows, layout.totalCols, '');
   const backgrounds = wbsEmptyMatrix_(layout.totalRows, layout.totalCols, WBS_COLORS.white);
 
@@ -458,13 +459,16 @@ function buildWbsLayout_(maxDepth, meetingCount, taskCount) {
   };
 }
 
-function buildWbsDateRange_(visibleRows, derived, options, milestones, meetings) {
+function buildWbsDateRange_(visibleRows, derived, options, milestones, meetings, actuals) {
   const days = [];
   visibleRows.forEach(function (row) {
     const plan = wbsPlanForNode_(row.node, derived[wbsNodeId_(row.node)]);
     if (wbsIsValidDate_(plan.startDate) && wbsIsValidDate_(plan.endDate)) {
       days.push(wbsDateToDay_(plan.startDate), wbsDateToDay_(plan.endDate));
     }
+    const actual = (actuals || {})[wbsNodeId_(row.node)] || {};
+    if (wbsIsValidDate_(actual.startDate)) days.push(wbsDateToDay_(actual.startDate));
+    if (wbsIsValidDate_(actual.endDate)) days.push(wbsDateToDay_(actual.endDate));
   });
   (milestones || []).forEach(function (milestone) {
     const date = wbsClean_(wbsGet_(milestone, 'Date', 'date'));
@@ -1040,8 +1044,12 @@ function deriveActuals_(logs, options) {
     grouped[nodeId].push(log);
   });
   const actuals = {};
-  Object.keys(grouped).forEach(function (nodeId) {
-    const nodeLogs = grouped[nodeId].slice().sort(function (a, b) {
+  const nodesById = options.nodesById || {};
+  const nodeIds = {};
+  Object.keys(grouped).forEach(function (nodeId) { nodeIds[nodeId] = true; });
+  Object.keys(nodesById).forEach(function (nodeId) { nodeIds[nodeId] = true; });
+  Object.keys(nodeIds).forEach(function (nodeId) {
+    const nodeLogs = (grouped[nodeId] || []).slice().sort(function (a, b) {
       return wbsClean_(wbsGet_(a, 'ChangedAt', 'changedAt')).localeCompare(wbsClean_(wbsGet_(b, 'ChangedAt', 'changedAt')));
     });
     const startCandidates = [];
@@ -1068,9 +1076,14 @@ function deriveActuals_(logs, options) {
         }
       });
     }
+    const node = nodesById[nodeId] || {};
+    const explicitStart = wbsClean_(wbsGet_(node, 'ActualStartDate', 'actualStartDate'));
+    const explicitEnd = wbsClean_(wbsGet_(node, 'ActualEndDate', 'actualEndDate'));
+    const hasExplicitRange = wbsIsValidDate_(explicitStart) && wbsIsValidDate_(explicitEnd) &&
+      wbsDateToDay_(explicitStart) <= wbsDateToDay_(explicitEnd);
     actuals[nodeId] = {
-      startDate: startCandidates.length ? startCandidates.sort()[0] : '',
-      endDate: endDate
+      startDate: hasExplicitRange ? explicitStart : (startCandidates.length ? startCandidates.sort()[0] : ''),
+      endDate: hasExplicitRange ? explicitEnd : endDate
     };
   });
   return actuals;

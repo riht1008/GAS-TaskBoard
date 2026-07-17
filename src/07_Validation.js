@@ -137,6 +137,27 @@ function normalizeSchedule_(startDate, endDate) {
   return { startDate: start, endDate: end };
 }
 
+function normalizeActualDates_(startDate, endDate) {
+  const start = cleanString_(startDate);
+  const end = cleanString_(endDate);
+  if (!start && !end) {
+    return { startDate: '', endDate: '' };
+  }
+  if (!start || !end) {
+    throw new Error('実績着手日と実績終了日は両方を入力するか、両方を未設定にしてください。');
+  }
+  if (start && !isValidDate_(start)) {
+    throw new Error('実績着手日は YYYY-MM-DD 形式で入力してください。');
+  }
+  if (end && !isValidDate_(end)) {
+    throw new Error('実績終了日は YYYY-MM-DD 形式で入力してください。');
+  }
+  if (start && end && dateToDay_(start) > dateToDay_(end)) {
+    throw new Error('実績終了日は実績着手日以降にしてください。');
+  }
+  return { startDate: start, endDate: end };
+}
+
 function scheduleWouldBeClearedWithDependencies_(node, dependencies, nodesById) {
   if (hasSchedule_(node)) {
     return false;
@@ -259,7 +280,8 @@ function nodeHasDependency_(nodeId, dependencies, nodesById) {
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
-    validateNodeTree_: validateNodeTree_
+    validateNodeTree_: validateNodeTree_,
+    normalizeActualDates_: normalizeActualDates_
   };
 }
 

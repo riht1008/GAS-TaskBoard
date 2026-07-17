@@ -216,7 +216,9 @@ function normalizeCellValue_(sheetName, header, value) {
 }
 
 function isDateOnlyHeader_(header) {
-  return header === 'StartDate' || header === 'EndDate' || header === 'Date';
+  return header === 'StartDate' || header === 'EndDate' ||
+    header === 'ActualStartDate' || header === 'ActualEndDate' ||
+    header === 'Date';
 }
 
 function normalizeDateOnlyCell_(value) {

@@ -136,7 +136,9 @@ function setupProject(payload) {
       Progress: '',
       IncludeInWbs: true,
       DraftOwner: '',
-      DraftExpiresAt: ''
+      DraftExpiresAt: '',
+      ActualStartDate: '',
+      ActualEndDate: ''
     });
 
     const completedRows = readAll_();

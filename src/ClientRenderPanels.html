@@ -10,36 +10,58 @@
       const doneColumnId = doneStatusColumnId();
       const progressValue = draft.statusColumnId === doneColumnId ? 100 : normalizeProgressValue(draft.progress) === null ? 0 : normalizeProgressValue(draft.progress);
       const ancestorExcluded = hasWbsExcludedAncestor(node.id);
+      const inferredActualRange = formatRange(node.inferredActualStartDate || '', node.inferredActualEndDate || '');
+      const hasActualOverride = Boolean(draft.actualStartDate && draft.actualEndDate);
       return `
         <div class="overlay" data-action="close-drawer"></div>
         <div class="drawer-shell">
-          <aside class="drawer" role="dialog" aria-modal="true">
+          <aside class="drawer detail-drawer" role="dialog" aria-modal="true">
             <header class="drawer-head">
               <button class="button ghost icon" data-action="close-drawer" title="閉じる" aria-label="詳細を閉じる">${icon('x')}</button>
               <div class="drawer-title">${h(node.name || '新しいタスク')}</div>
+              ${state.savingNodeIds.has(node.id) ? '<span class="chip">保存中</span>' : ''}
             </header>
-            <div class="drawer-body">
-              <section class="drawer-section">
-                <div class="field wide">
-                  <span class="field-label">名称</span>
-                  <textarea class="textarea task-name-textarea" rows="2" data-detail-name-input data-draft-scope="detail" data-draft-field="name" ${state.currentMember ? '' : 'readonly'}>${h(draft.name)}</textarea>
-                </div>
-                <div class="field-grid">
+            <div class="drawer-body detail-drawer-body">
+              <main class="detail-main">
+                <section class="detail-title-section">
+                  <label class="field wide">
+                    <span class="field-label">タスク名</span>
+                    <textarea class="textarea task-name-textarea detail-name-textarea" rows="2" data-detail-name-input data-draft-scope="detail" data-draft-field="name" ${state.currentMember ? '' : 'readonly'}>${h(draft.name)}</textarea>
+                  </label>
+                  <div class="detail-summary" aria-label="タスクの概要">
+                    <span class="chip">${Math.round(node.progress)}%</span>
+                    <span class="mono">${h(formatRange(node.displayStartDate, node.displayEndDate))}</span>
+                    ${draft.includeInWbs === false ? '<span class="chip">WBS外</span>' : ''}
+                  </div>
+                </section>
+                <section class="detail-content-section">
+                  <div class="section-title">説明</div>
+                  <textarea class="textarea detail-description-textarea" data-draft-scope="detail" data-draft-field="description" placeholder="目的、背景、完了条件などを記載" ${state.currentMember ? '' : 'readonly'}>${h(draft.description)}</textarea>
+                </section>
+                <section class="detail-content-section detail-comments-section">
+                  <div class="section-title">コメント</div>
+                  <div class="comment-list">
+                    ${(state.commentPages.get(node.id) || {}).hasMore ? `<button class="button secondary compact" data-action="load-earlier-comments" data-node-id="${h(node.id)}" ${state.commentsLoading.has(node.id) ? 'disabled' : ''}>以前のコメントを読み込む</button>` : ''}
+                    ${comments ? renderCommentThreads(comments) : '<div class="meta-line">読み込み中</div>'}
+                    ${comments && !comments.length ? '<div class="meta-line">コメントなし</div>' : ''}
+                    ${renderCommentComposer(node.id)}
+                  </div>
+                </section>
+              </main>
+              <aside class="detail-sidebar" aria-label="タスクのプロパティ">
+                <section class="drawer-section detail-property-section">
+                  <div class="section-title">プロパティ</div>
                   <label class="field">
                     <span class="field-label">ステータス</span>
                     ${renderDropdown({ scope: 'detail', field: 'statusColumnId', selected: draft.statusColumnId, disabled: !state.currentMember, options: state.statusColumns.map(column => ({ value: column.id, label: column.name, color: column.color || defaultStatusColor(column) })) })}
                   </label>
                   <label class="field">
+                    <span class="field-label">担当者</span>
+                    ${renderDropdown({ scope: 'detail', field: 'assigneeIds', selected: draft.assigneeIds, disabled: !state.currentMember, multi: true, placeholder: '未割当', options: state.members.map(member => ({ value: member.id, label: member.name, avatar: member })) })}
+                  </label>
+                  <label class="field">
                     <span class="field-label">優先度</span>
                     ${renderDropdown({ scope: 'detail', field: 'priority', selected: draft.priority, disabled: !state.currentMember, options: priorityOptions() })}
-                  </label>
-                  <label class="field">
-                    <span class="field-label">開始日</span>
-                    ${renderDatePicker({ scope: 'detail', field: 'startDate', selected: draft.startDate, disabled: !state.currentMember, endDate: draft.endDate, placeholder: '未設定' })}
-                  </label>
-                  <label class="field">
-                    <span class="field-label">終了日</span>
-                    ${renderDatePicker({ scope: 'detail', field: 'endDate', selected: draft.endDate, disabled: !state.currentMember, startDate: draft.startDate, minDate: draft.startDate, placeholder: '未設定' })}
                   </label>
                   <label class="field">
                     <span class="field-label">進捗</span>
@@ -48,57 +70,66 @@
                       : renderDropdown({ scope: 'detail', field: 'progress', selected: String(progressValue), disabled: !state.currentMember || draft.statusColumnId === doneColumnId, options: progressOptions() })}
                     ${!node.hasChildren && draft.statusColumnId === doneColumnId ? '<span class="field-hint">ステータスで管理</span>' : ''}
                   </label>
+                </section>
+                <section class="drawer-section detail-property-section">
+                  <div class="section-title">予定</div>
+                  <div class="detail-date-grid">
+                    <label class="field">
+                      <span class="field-label">開始日</span>
+                      ${renderDatePicker({ scope: 'detail', field: 'startDate', selected: draft.startDate, disabled: !state.currentMember, endDate: draft.endDate, placeholder: '未設定' })}
+                    </label>
+                    <label class="field">
+                      <span class="field-label">終了日</span>
+                      ${renderDatePicker({ scope: 'detail', field: 'endDate', selected: draft.endDate, disabled: !state.currentMember, startDate: draft.startDate, minDate: draft.startDate, placeholder: '未設定' })}
+                    </label>
+                  </div>
+                  ${node.hasChildren ? `<button class="button secondary compact" data-action="fit-children" data-node-id="${h(node.id)}" ${state.currentMember ? '' : 'disabled'}>子の予定に合わせる</button>` : ''}
+                </section>
+                <section class="drawer-section detail-property-section">
+                  <div class="section-title">実績</div>
+                  <div class="detail-date-grid">
+                    <label class="field">
+                      <span class="field-label">着手日</span>
+                      ${renderDatePicker({ scope: 'detail', field: 'actualStartDate', selected: draft.actualStartDate, disabled: !state.currentMember, endDate: draft.actualEndDate, placeholder: '自動' })}
+                    </label>
+                    <label class="field">
+                      <span class="field-label">終了日</span>
+                      ${renderDatePicker({ scope: 'detail', field: 'actualEndDate', selected: draft.actualEndDate, disabled: !state.currentMember, startDate: draft.actualStartDate, minDate: draft.actualStartDate, placeholder: '自動' })}
+                    </label>
+                  </div>
+                  <div class="field-hint">${hasActualOverride
+                    ? '手動設定した実績期間をWBSへ反映します'
+                    : inferredActualRange
+                      ? `自動算出: ${h(inferredActualRange)}`
+                      : '未設定時はステータス・進捗の変更履歴から自動算出します'}</div>
+                </section>
+                <section class="drawer-section detail-property-section">
+                  <div class="section-title">WBS</div>
+                  <label class="switch wbs-switch"><input type="checkbox" data-draft-scope="detail" data-draft-field="includeInWbs" ${checked(draft.includeInWbs !== false)} ${ancestorExcluded || !state.currentMember ? 'disabled' : ''}> 反映</label>
+                  ${ancestorExcluded ? '<span class="field-hint">親タスクがWBS対象外</span>' : ''}
                   <label class="field">
-                    <span class="field-label">WBS</span>
-                    <span class="switch wbs-switch"><input type="checkbox" data-draft-scope="detail" data-draft-field="includeInWbs" ${checked(draft.includeInWbs !== false)} ${ancestorExcluded || !state.currentMember ? 'disabled' : ''}> 反映</span>
-                    ${ancestorExcluded ? '<span class="field-hint">親タスクがWBS対象外</span>' : ''}
-                  </label>
-                  <label class="field wide">
-                    <span class="field-label">担当者</span>
-                    ${renderDropdown({ scope: 'detail', field: 'assigneeIds', selected: draft.assigneeIds, disabled: !state.currentMember, multi: true, placeholder: '未割当', options: state.members.map(member => ({ value: member.id, label: member.name, avatar: member })) })}
-                  </label>
-                  <label class="field wide">
                     <span class="field-label">成果物</span>
                     <input class="input" data-draft-scope="detail" data-draft-field="deliverable" value="${h(draft.deliverable)}" ${state.currentMember ? '' : 'readonly'}>
                   </label>
-                  <label class="field wide">
+                  <label class="field">
                     <span class="field-label">備考</span>
                     <input class="input" data-draft-scope="detail" data-draft-field="note" value="${h(draft.note)}" ${state.currentMember ? '' : 'readonly'}>
                   </label>
-                  <label class="field wide">
-                    <span class="field-label">説明</span>
-                    <textarea class="textarea" data-draft-scope="detail" data-draft-field="description" ${state.currentMember ? '' : 'readonly'}>${h(draft.description)}</textarea>
-                  </label>
-                </div>
-              </section>
-              <section class="drawer-section">
-                <div class="section-title">状態</div>
-                <div class="meta-line">
-                  <span class="chip">${Math.round(node.progress)}%</span>
-                  <span class="mono">${h(formatRange(node.displayStartDate, node.displayEndDate))}</span>
-                  ${state.savingNodeIds.has(node.id) ? '<span class="chip">保存中</span>' : ''}
-                </div>
-                <div class="inline-actions">
-                  ${parent ? `<button class="button secondary compact" data-open-node="${h(parent.id)}">親: ${h(parent.name)}</button>` : ''}
-                  ${canCreateChild(node) ? `<button class="button secondary compact" data-action="create-child-shell" data-parent-id="${h(node.id)}">子を追加</button>` : ''}
-                  ${node.hasChildren ? `<button class="button secondary compact" data-action="fit-children" data-node-id="${h(node.id)}" ${state.currentMember ? '' : 'disabled'}>子に合わせる</button>` : ''}
-                  ${node.id !== state.rootId ? `<button class="button destructive compact" data-action="confirm-node-delete" data-node-id="${h(node.id)}" ${state.currentMember ? '' : 'disabled'}>タスクを削除</button>` : ''}
-                </div>
-                ${childNodes.length ? `<div class="related-list">${childNodes.map(child => `<div class="related-row"><button class="button ghost" data-open-node="${h(child.id)}">${h(child.name || '新しいタスク')}</button></div>`).join('')}</div>` : ''}
-              </section>
-              <section class="drawer-section">
-                <div class="section-title">依存関係</div>
-                ${renderDependencyPanel(node)}
-              </section>
-              <section class="drawer-section">
-                <div class="section-title">コメント</div>
-                <div class="comment-list">
-                  ${(state.commentPages.get(node.id) || {}).hasMore ? `<button class="button secondary compact" data-action="load-earlier-comments" data-node-id="${h(node.id)}" ${state.commentsLoading.has(node.id) ? 'disabled' : ''}>以前のコメントを読み込む</button>` : ''}
-                  ${comments ? renderCommentThreads(comments) : '<div class="meta-line">読み込み中</div>'}
-                  ${comments && !comments.length ? '<div class="meta-line">コメントなし</div>' : ''}
-                  ${renderCommentComposer(node.id)}
-                </div>
-              </section>
+                </section>
+                <section class="drawer-section detail-property-section">
+                  <div class="section-title">関連タスク</div>
+                  <div class="inline-actions detail-related-actions">
+                    ${parent ? `<button class="button secondary compact" data-open-node="${h(parent.id)}">親: ${h(parent.name)}</button>` : ''}
+                    ${canCreateChild(node) ? `<button class="button secondary compact" data-action="create-child-shell" data-parent-id="${h(node.id)}">子を追加</button>` : ''}
+                  </div>
+                  ${childNodes.length ? `<div class="related-list">${childNodes.map(child => `<div class="related-row"><button class="button ghost" data-open-node="${h(child.id)}">${h(child.name || '新しいタスク')}</button></div>`).join('')}</div>` : '<div class="meta-line">子タスクなし</div>'}
+                </section>
+                <section class="drawer-section detail-property-section">
+                  <div class="section-title">依存関係</div>
+                  ${renderDependencyPanel(node)}
+                </section>
+                ${node.id !== state.rootId ? `<section class="drawer-section detail-danger-section"><button class="button destructive" data-action="confirm-node-delete" data-node-id="${h(node.id)}" ${state.currentMember ? '' : 'disabled'}>タスクを削除</button></section>` : ''}
+              </aside>
             </div>
             <footer class="drawer-foot">
               <button class="button secondary" data-action="close-drawer">閉じる</button>
@@ -225,7 +256,7 @@
               <button class="button ghost compact" type="button" data-action="cancel-comment-reply">キャンセル</button>
             </div>
           ` : ''}
-          <textarea class="textarea" id="commentText" data-comment-text="${h(nodeId)}" placeholder="コメント" ${state.currentMember ? '' : 'disabled'}>${h(draft)}</textarea>
+          <textarea class="textarea" id="commentText" data-comment-text="${h(nodeId)}" placeholder="コメント" aria-label="コメントを追加" ${state.currentMember ? '' : 'disabled'}>${h(draft)}</textarea>
           ${mention && mention.active ? renderMentionMenu(mention) : ''}
           <button class="button secondary" data-action="post-comment" ${state.currentMember ? '' : 'disabled'}>コメントを保存</button>
         </div>
@@ -614,6 +645,26 @@
           <label class="field wide">
             <span class="switch"><input type="checkbox" data-draft-scope="projectSettings" data-draft-field="statusChangeEnabled" ${checked(draft.statusChangeEnabled !== false)}> ステータス変更を通知</span>
           </label>
+          <div class="field wide">
+            <label class="field-label" for="slackStatusTemplate">ステータス変更の送信文面</label>
+            <textarea class="textarea slack-template-textarea" id="slackStatusTemplate" rows="7" maxlength="2000" aria-describedby="slackStatusTemplateHelp" data-draft-scope="projectSettings" data-draft-field="statusTemplate">${h(draft.statusTemplate || SLACK_DEFAULT_STATUS_TEMPLATE)}</textarea>
+            <span class="field-hint mono" id="slackStatusTemplateHelp">使用可能: {taskName} {parentPath} {beforeStatus} {afterStatus} {actorName} {webAppUrl}</span>
+            <div class="inline-actions">
+              <button class="button secondary compact" type="button" data-action="reset-slack-template" data-template-field="statusTemplate" aria-label="ステータス変更の送信文面をデフォルトに戻す">デフォルトに戻す</button>
+            </div>
+          </div>
+          <label class="field wide">
+            <span class="switch"><input type="checkbox" data-draft-scope="projectSettings" data-draft-field="mentionEnabled" ${checked(draft.mentionEnabled === true)}> コメントのメンションを通知</span>
+            <span class="field-hint">メンション対象者名を含む1件の通知を、このWebhookのチャンネルへ送信します</span>
+          </label>
+          <div class="field wide">
+            <label class="field-label" for="slackMentionTemplate">メンションの送信文面</label>
+            <textarea class="textarea slack-template-textarea" id="slackMentionTemplate" rows="8" maxlength="2000" aria-describedby="slackMentionTemplateHelp" data-draft-scope="projectSettings" data-draft-field="mentionTemplate">${h(draft.mentionTemplate || SLACK_DEFAULT_MENTION_TEMPLATE)}</textarea>
+            <span class="field-hint mono" id="slackMentionTemplateHelp">使用可能: {taskName} {parentPath} {mentionedNames} {actorName} {commentText} {webAppUrl}</span>
+            <div class="inline-actions">
+              <button class="button secondary compact" type="button" data-action="reset-slack-template" data-template-field="mentionTemplate" aria-label="メンションの送信文面をデフォルトに戻す">デフォルトに戻す</button>
+            </div>
+          </div>
           <div class="inline-actions wide">
             ${renderSubmitButton({ submitting, iconName: 'check', label: '設定を保存' })}
             <button class="button secondary" type="button" data-action="test-slack" ${!settings.configured || submitting ? 'disabled' : ''}>接続テスト</button>

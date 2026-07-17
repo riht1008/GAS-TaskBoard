@@ -272,6 +272,9 @@
       if (!state.comments.has(node.id) && !state.commentsLoading.has(node.id)) {
         loadComments(node.id);
       }
+      if (!node.actualDatesLoaded && !state.actualDatesLoading.has(node.id)) {
+        loadNodeActualDates(node.id);
+      }
       if (state.commentReplyTo && state.commentReplyTo.nodeId !== node.id) {
         state.commentReplyTo = null;
       }

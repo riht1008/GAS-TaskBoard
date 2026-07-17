@@ -61,7 +61,8 @@ function commentPage_(comments, options) {
 
 function addComment(payload) {
   payload = payload || {};
-  return withLock_(function () {
+  let mentionNotification = null;
+  const result = withLock_(function () {
     requireSchemaExists_();
     const rows = readCommentSnapshot_();
     const actor = requireCurrentMember_(rows.members);
@@ -107,11 +108,26 @@ function addComment(payload) {
       Mentions: mentions.join(',')
     };
     appendObject_(SHEET.COMMENTS, comment);
+    if (mentions.length) {
+      try {
+        const mentionedSet = {};
+        mentions.forEach(function (id) { mentionedSet[id] = true; });
+        const mentionedMembers = rows.members.filter(function (member) { return !!mentionedSet[cleanString_(member.MemberId)]; });
+        mentionNotification = buildMentionNotification_(activeMap[nodeId], comment, actor, mentionedMembers, rows);
+      } catch (error) {
+        mentionNotification = null;
+      }
+    }
     const nodeCommentCount = rows.comments.filter(function (item) { return cleanString_(item.NodeId) === nodeId; }).length + 1;
     const counts = {};
     counts[nodeId] = nodeCommentCount;
     return { ok: true, comment: clientComment_(comment), nodeId: nodeId, commentCounts: counts };
   });
+  if (mentionNotification) {
+    postToSlack_(mentionNotification, { type: 'mention' });
+    attachPublicSlackSettings_(result);
+  }
+  return result;
 }
 
 function joinAsMember(payload) {
@@ -245,6 +261,7 @@ function deleteMember(payload) {
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
+    addComment: addComment,
     commentPage_: commentPage_
   };
 }

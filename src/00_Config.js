@@ -2,7 +2,7 @@
  * Shared configuration and sheet schema.
  */
 
-var APP_VERSION = '1.1.0';
+var APP_VERSION = '1.2.0';
 var LOCK_WAIT_MS = 15000;
 var DAY_MS = 24 * 60 * 60 * 1000;
 var DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
@@ -41,7 +41,9 @@ HEADERS[SHEET.NODES] = [
   'Progress',
   'IncludeInWbs',
   'DraftOwner',
-  'DraftExpiresAt'
+  'DraftExpiresAt',
+  'ActualStartDate',
+  'ActualEndDate'
 ];
 HEADERS[SHEET.MEMBERS] = ['MemberId', 'Name', 'Email', 'Color', 'Company'];
 HEADERS[SHEET.STATUS_COLUMNS] = ['ColumnId', 'Name', 'SortOrder', 'IsDoneColumn', 'Color', 'IsInProgressColumn'];
@@ -66,7 +68,9 @@ TEXT_COLUMNS[SHEET.NODES] = [
   'DeletedAt',
   'DeletedBy',
   'DraftOwner',
-  'DraftExpiresAt'
+  'DraftExpiresAt',
+  'ActualStartDate',
+  'ActualEndDate'
 ];
 TEXT_COLUMNS[SHEET.MEMBERS] = ['MemberId', 'Email', 'Color'];
 TEXT_COLUMNS[SHEET.STATUS_COLUMNS] = ['ColumnId', 'Color'];

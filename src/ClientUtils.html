@@ -205,6 +205,14 @@
       next.endDate = normalizeClientDateText(next.endDate);
       next.displayStartDate = normalizeClientDateText(next.displayStartDate);
       next.displayEndDate = normalizeClientDateText(next.displayEndDate);
+      next.actualStartDate = normalizeClientDateText(next.actualStartDate);
+      next.actualEndDate = normalizeClientDateText(next.actualEndDate);
+      if (Object.prototype.hasOwnProperty.call(next, 'inferredActualStartDate')) {
+        next.inferredActualStartDate = normalizeClientDateText(next.inferredActualStartDate);
+      }
+      if (Object.prototype.hasOwnProperty.call(next, 'inferredActualEndDate')) {
+        next.inferredActualEndDate = normalizeClientDateText(next.inferredActualEndDate);
+      }
       return next;
     }
 
@@ -303,6 +311,8 @@
       if (patch.assigneeIds !== undefined) node.assigneeIds = (patch.assigneeIds || []).slice();
       if (patch.startDate !== undefined) node.startDate = patch.startDate;
       if (patch.endDate !== undefined) node.endDate = patch.endDate;
+      if (patch.actualStartDate !== undefined) node.actualStartDate = patch.actualStartDate;
+      if (patch.actualEndDate !== undefined) node.actualEndDate = patch.actualEndDate;
       if (patch.description !== undefined) node.description = patch.description;
       if (patch.deliverable !== undefined) node.deliverable = patch.deliverable;
       if (patch.note !== undefined) node.note = patch.note;

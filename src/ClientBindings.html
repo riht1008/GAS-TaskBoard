@@ -627,6 +627,7 @@
       if (action === 'project-settings-tab') return switchProjectSettingsTab(event.currentTarget.dataset.tab);
       if (action === 'save-project-setting') return saveProjectSettingsDraft();
       if (action === 'clear-project-setting') return clearProjectSettingsDraft();
+      if (action === 'reset-slack-template') return resetSlackTemplate(event.currentTarget.dataset.templateField);
       if (action === 'test-slack') return testSlackSettingsConnection();
       if (action === 'disconnect-slack') return confirmSlackDisconnect();
       if (action === 'disconnect-slack-confirmed') return disconnectSlackSettings();
@@ -817,6 +818,9 @@
           } else if (field === 'startDate' || field === 'endDate') {
             target.startDate = '';
             target.endDate = '';
+          } else if (field === 'actualStartDate' || field === 'actualEndDate') {
+            target.actualStartDate = '';
+            target.actualEndDate = '';
           } else {
             target[field] = '';
           }
@@ -845,6 +849,17 @@
           target.endDate = dateText;
           return;
         }
+      }
+      if (field === 'actualStartDate') {
+        target.actualStartDate = dateText;
+        if (!target.actualEndDate || target.actualEndDate < dateText) target.actualEndDate = dateText;
+        return;
+      }
+      if (field === 'actualEndDate') {
+        if (target.actualStartDate && dateText < target.actualStartDate) return;
+        if (!target.actualStartDate) target.actualStartDate = dateText;
+        target.actualEndDate = dateText;
+        return;
       }
       if (field === 'startDate') {
         target.startDate = dateText;

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import fs from 'node:fs';
 import test from 'node:test';
 
 global.cleanString_ = value => value === null || value === undefined ? '' : String(value).trim();
@@ -24,11 +25,23 @@ global.Utilities = {
 
 const require = createRequire(import.meta.url);
 const { normalizeCellValue_, classifyHeaders_, consecutiveRowBlocks_, writeObjects_ } = require('../src/06_Sheets.js');
+const configSource = fs.readFileSync(new URL('../src/00_Config.js', import.meta.url), 'utf8');
+
+test('actual date columns are an append-only Nodes schema extension', () => {
+  assert.match(configSource, /'DraftExpiresAt',\s*'ActualStartDate',\s*'ActualEndDate'\s*\]/);
+});
 
 test('normalizeCellValue formats milestone Date objects as yyyy-mm-dd in script timezone', () => {
   const value = new Date('2026-07-14T15:00:00.000Z');
 
   assert.equal(normalizeCellValue_('Milestones', 'Date', value), '2026-07-15');
+});
+
+test('normalizeCellValue keeps actual dates as date-only text', () => {
+  const value = new Date('2026-07-14T15:00:00.000Z');
+
+  assert.equal(normalizeCellValue_('Nodes', 'ActualStartDate', value), '2026-07-15');
+  assert.equal(normalizeCellValue_('Nodes', 'ActualEndDate', '2026-07-20'), '2026-07-20');
 });
 
 test('normalizeCellValue recovers legacy spreadsheet date strings for date-only fields', () => {

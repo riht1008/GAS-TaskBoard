@@ -25,9 +25,28 @@ global.effectiveLeafProgress_ = (node, doneId) => node.StatusColumnId === doneId
   ? 100
   : (global.validManualProgress_(node.Progress) ?? 0);
 global.hasSchedule_ = node => Boolean(node && /^\d{4}-\d{2}-\d{2}$/.test(node.StartDate || '') && /^\d{4}-\d{2}-\d{2}$/.test(node.EndDate || '') && node.StartDate <= node.EndDate);
+global.SHEET = { ACTIVITY_LOG: 'ActivityLog' };
+global.sheetWasLoaded_ = rows => Boolean(rows.__loadedSheets && rows.__loadedSheets.ActivityLog);
+global.formatDateOnlyCell_ = date => date.toISOString().slice(0, 10);
+global.isTrue_ = value => value === true || String(value).toLowerCase() === 'true';
 
 const require = createRequire(import.meta.url);
-const { computeDerived_ } = require('../src/05_Payloads.js');
+const { computeDerived_, clientActivityActuals_ } = require('../src/05_Payloads.js');
+
+test('client activity actuals are derived only when the activity sheet was loaded', () => {
+  const derived = { task: { progress: 100 } };
+  const unloaded = clientActivityActuals_({ activityLog: [] }, derived);
+  const loaded = clientActivityActuals_({
+    __loadedSheets: { ActivityLog: true },
+    activityLog: [
+      { NodeId: 'task', Field: 'progress', NewValue: 15, NewValueIsDone: false, ChangedAt: '2026-07-02T00:00:00.000Z' },
+      { NodeId: 'task', Field: 'status', NewValue: 'done', NewValueIsDone: true, ChangedAt: '2026-07-05T00:00:00.000Z' }
+    ]
+  }, derived);
+
+  assert.equal(unloaded, null);
+  assert.deepEqual(loaded.task, { startDate: '2026-07-02', endDate: '2026-07-05' });
+});
 
 function clientRecomputeSource() {
   const source = fs.readFileSync(new URL('../src/ClientDataSync.html', import.meta.url), 'utf8');

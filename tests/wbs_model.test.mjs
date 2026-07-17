@@ -207,6 +207,46 @@ test('deriveActuals converts UTC timestamps to Asia/Tokyo dates', () => {
   assert.deepEqual(actuals.n1, { startDate: '2026-07-05', endDate: '2026-07-05' });
 });
 
+test('manual actual range overrides activity history and expands the WBS date range', () => {
+  const rows = baseRows();
+  const task = rows.nodes.find(node => node.NodeId === 'a');
+  task.ActualStartDate = '2026-05-01';
+  task.ActualEndDate = '2026-05-03';
+  rows.activityLog = [
+    { NodeId: 'a', Field: 'status', ChangedAt: '2026-07-02T00:00:00.000Z', NewValueIsDone: false },
+    { NodeId: 'a', Field: 'status', ChangedAt: '2026-07-03T00:00:00.000Z', NewValueIsDone: true }
+  ];
+  task.StatusColumnId = 'done';
+  task.Progress = 100;
+
+  const model = buildWbsModel_(rows, {
+    actorName: '佐藤',
+    now: '2026-07-03T00:00:00.000Z',
+    createdAt: '2026-07-03T00:00:00.000Z',
+    version: 1
+  });
+  const actual = deriveActuals_(rows.activityLog, {
+    progressByNodeId: { a: 100 },
+    nodesById: { a: task }
+  });
+
+  assert.deepEqual(actual.a, { startDate: '2026-05-01', endDate: '2026-05-03' });
+  assert.ok(model.dateColumns.some(column => column.date === '2026-05-01'));
+});
+
+test('incomplete manual actual range falls back to activity history', () => {
+  const logs = [
+    { NodeId: 'a', Field: 'status', ChangedAt: '2026-07-02T00:00:00.000Z', NewValueIsDone: false },
+    { NodeId: 'a', Field: 'status', ChangedAt: '2026-07-03T00:00:00.000Z', NewValueIsDone: true }
+  ];
+  const actual = deriveActuals_(logs, {
+    progressByNodeId: { a: 100 },
+    nodesById: { a: { NodeId: 'a', ActualStartDate: '2026-05-01', ActualEndDate: '' } }
+  });
+
+  assert.deepEqual(actual.a, { startDate: '2026-07-02', endDate: '2026-07-03' });
+});
+
 test('WBS progress output floors derived parent progress to valid options', () => {
   const rows = baseRows();
   rows.nodes = [

@@ -64,7 +64,9 @@ function addNode(payload) {
       Progress: '',
       IncludeInWbs: true,
       DraftOwner: isShell ? actor.MemberId : '',
-      DraftExpiresAt: isShell ? new Date(Date.now() + DRAFT_TTL_MS).toISOString() : ''
+      DraftExpiresAt: isShell ? new Date(Date.now() + DRAFT_TTL_MS).toISOString() : '',
+      ActualStartDate: '',
+      ActualEndDate: ''
     };
 
     appendObject_(SHEET.NODES, node);
@@ -103,6 +105,8 @@ function saveNode(payload) {
 
     const beforeStart = cleanString_(node.StartDate);
     const beforeEnd = cleanString_(node.EndDate);
+    const beforeActualStart = cleanString_(node.ActualStartDate);
+    const beforeActualEnd = cleanString_(node.ActualEndDate);
     const beforeStatus = cleanString_(node.StatusColumnId);
     const doneColumnId = doneStatusColumnId_(rows.statusColumns);
     const beforeProgress = effectiveLeafProgress_(node, doneColumnId);
@@ -116,6 +120,7 @@ function saveNode(payload) {
     }
 
     const scheduleChanged = beforeStart !== node.StartDate || beforeEnd !== node.EndDate;
+    const actualDatesChanged = beforeActualStart !== cleanString_(node.ActualStartDate) || beforeActualEnd !== cleanString_(node.ActualEndDate);
     const statusChanged = beforeStatus !== node.StatusColumnId;
     const afterProgress = effectiveLeafProgress_(node, doneColumnId);
     const progressChanged = !nodeHadChildren && beforeProgress !== afterProgress;
@@ -140,6 +145,10 @@ function saveNode(payload) {
       actorId: actor.MemberId
     });
     rows = readNodeSnapshot_();
+    if (statusChanged || progressChanged || actualDatesChanged) {
+      rows.activityLog = readObjects_(SHEET.ACTIVITY_LOG);
+      rows.__loadedSheets[SHEET.ACTIVITY_LOG] = true;
+    }
     const writeIds = Object.keys(writeMap);
     const affectedIds = unique_(writeIds.concat(ancestorIdsForMany_(writeIds, activeNodes_(rows.nodes))));
     if (statusChanged) {
@@ -163,9 +172,32 @@ function saveNode(payload) {
     });
   });
   if (statusNotification) {
-    postToSlack_(statusNotification);
+    postToSlack_(statusNotification, { type: 'status' });
+    attachPublicSlackSettings_(result);
   }
   return result;
+}
+
+function getNodeActualDates(payload) {
+  payload = payload || {};
+  requireSchemaExists_();
+  const rows = readAll_({
+    sheets: [SHEET.NODES, SHEET.STATUS_COLUMNS, SHEET.ACTIVITY_LOG]
+  });
+  const nodeId = cleanString_(payload.nodeId);
+  const active = activeNodes_(rows.nodes);
+  if (!byId_(active, 'NodeId')[nodeId]) {
+    throw new Error('ノードが見つかりません。');
+  }
+  const derived = computeDerived_(active, rows.statusColumns);
+  const actuals = clientActivityActuals_(rows, derived);
+  const actual = actuals && actuals[nodeId] ? actuals[nodeId] : {};
+  return {
+    ok: true,
+    nodeId: nodeId,
+    inferredActualStartDate: cleanString_(actual.startDate),
+    inferredActualEndDate: cleanString_(actual.endDate)
+  };
 }
 
 function moveNode(payload) {
@@ -470,6 +502,14 @@ function applyNodePatch_(node, patch, rows) {
     );
     node.StartDate = schedule.startDate;
     node.EndDate = schedule.endDate;
+  }
+  if (patch.actualStartDate !== undefined || patch.actualEndDate !== undefined) {
+    const actual = normalizeActualDates_(
+      patch.actualStartDate !== undefined ? patch.actualStartDate : node.ActualStartDate,
+      patch.actualEndDate !== undefined ? patch.actualEndDate : node.ActualEndDate
+    );
+    node.ActualStartDate = actual.startDate;
+    node.ActualEndDate = actual.endDate;
   }
 }
 

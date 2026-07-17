@@ -1,4 +1,23 @@
     // State, constants, icons, and global listeners.
+    const SLACK_DEFAULT_STATUS_TEMPLATE = [
+      '*タスクのステータスが変更されました*',
+      '*タスク*: {taskName}',
+      '*親パス*: {parentPath}',
+      '*変更*: {beforeStatus} → {afterStatus}',
+      '*実行者*: {actorName}',
+      '*Webアプリ*: {webAppUrl}'
+    ].join('\n');
+    const SLACK_DEFAULT_MENTION_TEMPLATE = [
+      '*コメントでメンションされました*',
+      '*タスク*: {taskName}',
+      '*親パス*: {parentPath}',
+      '*メンション対象*: {mentionedNames}',
+      '*投稿者*: {actorName}',
+      '*コメント*',
+      '{commentText}',
+      '*Webアプリ*: {webAppUrl}'
+    ].join('\n');
+
     const state = {
       setupRequired: false,
       setupIncomplete: false,
@@ -41,6 +60,7 @@
       comments: new Map(),
       commentPages: new Map(),
       commentsLoading: new Set(),
+      actualDatesLoading: new Set(),
       commentDrafts: {},
       commentMentionIds: {},
       commentReplyTo: null,
@@ -71,7 +91,18 @@
       syncStatus: 'idle',
       lastSyncAt: '',
       scrollToNodeId: '',
-      slackSettings: { configured: false, maskedWebhookUrl: '', statusChangeEnabled: true, lastSuccessAt: '', lastErrorAt: '', lastError: '', lastResponseCode: 0 },
+      slackSettings: {
+        configured: false,
+        maskedWebhookUrl: '',
+        statusChangeEnabled: true,
+        mentionEnabled: false,
+        statusTemplate: SLACK_DEFAULT_STATUS_TEMPLATE,
+        mentionTemplate: SLACK_DEFAULT_MENTION_TEMPLATE,
+        lastSuccessAt: '',
+        lastErrorAt: '',
+        lastError: '',
+        lastResponseCode: 0
+      },
       renderCache: null
     };
 

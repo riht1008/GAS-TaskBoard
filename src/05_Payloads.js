@@ -58,18 +58,21 @@ function clientNodes_(rows, ids) {
   const idSet = {};
   (ids || []).forEach(function (id) { if (id) idSet[id] = true; });
   const derived = computeDerived_(active, rows.statusColumns);
+  const activityActuals = clientActivityActuals_(rows, derived);
   return active
     .filter(function (node) { return idSet[node.NodeId]; })
-    .map(function (node) { return clientNode_(node, derived[node.NodeId]); });
+    .map(function (node) {
+      return clientNode_(node, derived[node.NodeId], activityActuals ? activityActuals[node.NodeId] : undefined);
+    });
 }
 
 function clientNodesByIds_(rows, ids) {
   return clientNodes_(rows, ids || []);
 }
 
-function clientNode_(node, derived) {
+function clientNode_(node, derived, activityActual) {
   derived = derived || {};
-  return {
+  const result = {
     id: cleanString_(node.NodeId),
     parentId: cleanString_(node.ParentId),
     name: cleanString_(node.Name),
@@ -78,6 +81,8 @@ function clientNode_(node, derived) {
     priority: normalizePriority_(node.Priority),
     startDate: cleanString_(node.StartDate),
     endDate: cleanString_(node.EndDate),
+    actualStartDate: cleanString_(node.ActualStartDate),
+    actualEndDate: cleanString_(node.ActualEndDate),
     description: cleanString_(node.Description),
     deliverable: cleanString_(node.Deliverable),
     note: cleanString_(node.Note),
@@ -96,6 +101,48 @@ function clientNode_(node, derived) {
     draftOwner: cleanString_(node.DraftOwner),
     draftExpiresAt: cleanString_(node.DraftExpiresAt)
   };
+  if (activityActual !== undefined) {
+    result.inferredActualStartDate = cleanString_(activityActual && activityActual.startDate);
+    result.inferredActualEndDate = cleanString_(activityActual && activityActual.endDate);
+  }
+  return result;
+}
+
+function clientActivityActuals_(rows, derived) {
+  if (!sheetWasLoaded_(rows, SHEET.ACTIVITY_LOG)) return null;
+  const grouped = {};
+  (rows.activityLog || []).forEach(function (log) {
+    const nodeId = cleanString_(log.NodeId);
+    if (!nodeId) return;
+    if (!grouped[nodeId]) grouped[nodeId] = [];
+    grouped[nodeId].push(log);
+  });
+  const result = {};
+  Object.keys(derived || {}).forEach(function (nodeId) {
+    const logs = (grouped[nodeId] || []).slice().sort(function (a, b) {
+      return cleanString_(a.ChangedAt).localeCompare(cleanString_(b.ChangedAt));
+    });
+    const starts = [];
+    let endDate = '';
+    logs.forEach(function (log) {
+      const changedAt = cleanString_(log.ChangedAt);
+      const parsed = changedAt ? new Date(changedAt) : null;
+      const changedDate = parsed && !Number.isNaN(parsed.getTime()) ? formatDateOnlyCell_(parsed) : '';
+      if (!changedDate) return;
+      const field = cleanString_(log.Field);
+      if (field === 'status' || (field === 'progress' && Number(log.NewValue) > 0)) {
+        starts.push(changedDate);
+      }
+      if (Number(derived[nodeId] && derived[nodeId].progress) === 100 && isTrue_(log.NewValueIsDone)) {
+        endDate = changedDate;
+      }
+    });
+    result[nodeId] = {
+      startDate: starts.length ? starts.sort()[0] : '',
+      endDate: endDate
+    };
+  });
+  return result;
 }
 
 function clientMember_(member) {
@@ -299,6 +346,7 @@ function payloadVisibleNodes_(rows) {
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
-    computeDerived_: computeDerived_
+    computeDerived_: computeDerived_,
+    clientActivityActuals_: clientActivityActuals_
   };
 }
