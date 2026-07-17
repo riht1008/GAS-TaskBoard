@@ -21,6 +21,7 @@ function makeFullPayload_(rows) {
     dependencies: clientDependencies_(rows),
     milestones: rows.milestones.map(clientMilestone_).sort(compareSortOrder_),
     meetings: rows.meetings.map(clientMeeting_).sort(compareSortOrder_),
+    calendarOverrides: clientCalendarOverrides_(rows.calendarOverrides),
     slackSettings: publicSlackSettings_(),
     commentCounts: commentCounts_(rows),
     unregistered: !currentMember
@@ -151,7 +152,8 @@ function clientMember_(member) {
     name: cleanString_(member.Name),
     email: normalizeEmail_(member.Email),
     color: normalizeColor_(member.Color) || '#1E6F5C',
-    company: cleanString_(member.Company)
+    company: cleanString_(member.Company),
+    slackUserId: cleanString_(member.SlackUserId)
   };
 }
 
@@ -211,6 +213,35 @@ function clientMeeting_(meeting) {
     note: cleanString_(meeting.Note),
     sortOrder: Number(meeting.SortOrder) || 0
   };
+}
+
+function clientCalendarOverride_(override) {
+  return {
+    date: cleanString_(override.Date),
+    dayType: cleanString_(override.DayType),
+    name: cleanString_(override.Name)
+  };
+}
+
+function clientCalendarOverrides_(overrides) {
+  const seen = {};
+  const result = (overrides || []).map(function (override) {
+    const item = clientCalendarOverride_(override);
+    if (!isValidDate_(item.date)) {
+      throw new Error('CalendarOverrides シートに不正な日付があります。');
+    }
+    if (item.dayType !== 'working' && item.dayType !== 'holiday') {
+      throw new Error('CalendarOverrides シートの DayType は working または holiday にしてください。');
+    }
+    if (seen[item.date]) {
+      throw new Error('CalendarOverrides シートに同じ日付が複数あります。');
+    }
+    seen[item.date] = true;
+    return item;
+  });
+  return result.sort(function (a, b) {
+    return a.date.localeCompare(b.date);
+  });
 }
 
 function clientMeetingScheduleRule_(meeting) {

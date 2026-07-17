@@ -174,6 +174,9 @@
       state.dependencies = (data.dependencies || []).slice();
       state.milestones = (data.milestones || []).map(normalizeLoadedMilestone).sort(compareSortOrder);
       state.meetings = (data.meetings || []).map(normalizeLoadedMeeting).sort(compareSortOrder);
+      state.calendarOverrides = (data.calendarOverrides || []).map(normalizeLoadedCalendarOverride)
+        .filter(item => isClientDateText(item.date))
+        .sort((a, b) => a.date.localeCompare(b.date));
       state.commentCounts = data.commentCounts || {};
       state.slackSettings = Object.assign({}, state.slackSettings, data.slackSettings || {});
       state.currentMember = data.currentMember || null;
@@ -231,6 +234,7 @@
         dependencies: state.dependencies,
         milestones: state.milestones,
         meetings: state.meetings,
+        calendarOverrides: state.calendarOverrides,
         slackSettings: state.slackSettings,
         commentCounts: state.commentCounts,
         unregistered: state.unregistered
@@ -376,6 +380,8 @@
       state.statusById = new Map(state.statusColumns.map(column => [column.id, column]));
       state.milestones.sort(compareSortOrder);
       state.meetings.sort(compareSortOrder);
+      state.calendarOverrides.sort((a, b) => a.date.localeCompare(b.date));
+      state.calendarOverrideByDate = new Map(state.calendarOverrides.map(item => [item.date, item]));
       state.currentMember = state.members.find(member => member.email === state.currentEmail) || null;
       recomputeClientDerived();
     }
@@ -422,6 +428,7 @@
       if (Array.isArray(result.dependencies)) state.dependencies = result.dependencies.slice();
       if (Array.isArray(result.milestones)) state.milestones = result.milestones.map(normalizeLoadedMilestone);
       if (Array.isArray(result.meetings)) state.meetings = result.meetings.map(normalizeLoadedMeeting);
+      if (Array.isArray(result.calendarOverrides)) state.calendarOverrides = result.calendarOverrides.map(normalizeLoadedCalendarOverride);
       if (result.comment) {
         const comments = state.comments.get(result.comment.nodeId) || [];
         const index = comments.findIndex(comment => comment.id === result.comment.id);

@@ -150,6 +150,13 @@ function joinAsMember(payload) {
 
     const name = requireName_(payload.name || email.split('@')[0]);
     const color = normalizeColor_(payload.color) || '#1E6F5C';
+    const slackUserId = normalizeSlackUserId_(payload.slackUserId);
+    const duplicateSlackUser = slackUserId && rows.members.find(function (m) {
+      return normalizeSlackUserId_(m.SlackUserId) === slackUserId;
+    });
+    if (duplicateSlackUser) {
+      throw new Error('同じSlackメンバーIDのメンバーが既に存在します。');
+    }
     let memberId = cleanString_(payload.clientMemberId);
     const duplicateId = memberId && rows.members.some(function (m) { return cleanString_(m.MemberId) === memberId; });
     if (!memberId || duplicateId) {
@@ -160,7 +167,8 @@ function joinAsMember(payload) {
       Name: name,
       Email: email,
       Color: color,
-      Company: cleanString_(payload.company)
+      Company: cleanString_(payload.company),
+      SlackUserId: slackUserId
     });
     const freshMembers = readMemberSnapshot_().members;
     const currentMember = freshMembers.find(function (m) { return normalizeEmail_(m.Email) === email; });
@@ -183,11 +191,18 @@ function upsertMember(payload) {
     const name = requireName_(payload.name);
     const color = normalizeColor_(payload.color) || '#1E6F5C';
     const company = cleanString_(payload.company);
+    const slackUserId = normalizeSlackUserId_(payload.slackUserId);
     const duplicate = rows.members.find(function (m) {
       return normalizeEmail_(m.Email) === email && cleanString_(m.MemberId) !== memberId;
     });
     if (duplicate) {
       throw new Error('同じメールアドレスのメンバーが既に存在します。');
+    }
+    const duplicateSlackUser = slackUserId && rows.members.find(function (m) {
+      return normalizeSlackUserId_(m.SlackUserId) === slackUserId && cleanString_(m.MemberId) !== memberId;
+    });
+    if (duplicateSlackUser) {
+      throw new Error('同じSlackメンバーIDのメンバーが既に存在します。');
     }
 
     if (memberId) {
@@ -199,6 +214,7 @@ function upsertMember(payload) {
       member.Email = email;
       member.Color = color;
       member.Company = company;
+      member.SlackUserId = slackUserId;
       writeObject_(SHEET.MEMBERS, member);
     } else {
       const newMemberId = cleanString_(payload.clientMemberId);
@@ -211,7 +227,8 @@ function upsertMember(payload) {
         Name: name,
         Email: email,
         Color: color,
-        Company: company
+        Company: company,
+        SlackUserId: slackUserId
       });
     }
     return { ok: true, members: readMemberSnapshot_().members.map(clientMember_) };
@@ -262,6 +279,8 @@ function deleteMember(payload) {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     addComment: addComment,
-    commentPage_: commentPage_
+    commentPage_: commentPage_,
+    joinAsMember: joinAsMember,
+    upsertMember: upsertMember
   };
 }

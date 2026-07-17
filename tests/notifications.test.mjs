@@ -11,6 +11,9 @@ const {
   SLACK_DEFAULT_MENTION_TEMPLATE,
   SLACK_STATUS_TEMPLATE_KEYS,
   SLACK_MENTION_TEMPLATE_KEYS,
+  slackMentionedUsers_,
+  slackWebhookType_,
+  slackRequestPayload_,
   normalizeSlackTemplate_,
   renderSlackTemplate_,
   saveSlackSettings,
@@ -40,13 +43,32 @@ test('Slack templates provide defaults and interpolate only supported placeholde
   const mention = renderSlackTemplate_(SLACK_DEFAULT_MENTION_TEMPLATE, {
     taskName: '仕様確認',
     parentPath: '案件',
+    mentionedUsers: '<@U012AB3CD>, 佐藤',
     mentionedNames: '田中, 佐藤',
     actorName: '鈴木',
     commentText: '<!channel> 確認してください',
     webAppUrl: 'https://example.test/app'
   }, SLACK_DEFAULT_MENTION_TEMPLATE, SLACK_MENTION_TEMPLATE_KEYS);
-  assert.match(mention, /田中, 佐藤/);
+  assert.match(mention, /<@U012AB3CD>, 佐藤/);
   assert.match(mention, /&lt;!channel&gt;/);
+});
+
+test('Slack mention labels notify mapped users and safely fall back to names', () => {
+  assert.equal(slackMentionedUsers_([
+    { Name: '田中', SlackUserId: 'u012ab3cd' },
+    { Name: '<!channel> 佐藤', SlackUserId: '' }
+  ]), '<@U012AB3CD>, &lt;!channel&gt; 佐藤');
+});
+
+test('Slack webhook variants use the payload shape expected by each endpoint', () => {
+  const incomingUrl = 'https://hooks.slack.com/services/T/B/X';
+  const workflowUrl = 'https://hooks.slack.com/triggers/T/B/X';
+  const payload = { text: '通知', blocks: [{ type: 'section' }] };
+  assert.equal(slackWebhookType_(incomingUrl), 'incoming');
+  assert.equal(slackWebhookType_(workflowUrl), 'workflow');
+  assert.equal(slackWebhookType_('https://example.test/hook'), '');
+  assert.deepEqual(slackRequestPayload_(incomingUrl, payload), payload);
+  assert.deepEqual(slackRequestPayload_(workflowUrl, payload), { text: '通知' });
 });
 
 test('Slack settings reject unknown template placeholders', () => {
@@ -83,6 +105,13 @@ test('Slack settings persist independent choices and editable templates with leg
   assert.equal(initial.statusTemplate, SLACK_DEFAULT_STATUS_TEMPLATE);
   assert.equal(initial.mentionTemplate, SLACK_DEFAULT_MENTION_TEMPLATE);
 
+  values.set('SLACK_NOTIFICATION_SETTINGS', JSON.stringify({
+    mentionEnabled: true,
+    mentionTemplate: '旧設定の宛先: {mentionedNames}'
+  }));
+  assert.equal(slackNotificationSettings_().mentionTemplate, '旧設定の宛先: {mentionedUsers}');
+  values.delete('SLACK_NOTIFICATION_SETTINGS');
+
   const result = saveSlackSettings({
     webhookUrl: 'https://hooks.slack.com/services/T/B/X',
     statusChangeEnabled: false,
@@ -97,4 +126,10 @@ test('Slack settings persist independent choices and editable templates with leg
   assert.equal(result.slackSettings.statusTemplate, '変更: {taskName}');
   assert.equal(result.slackSettings.mentionTemplate, '宛先: {mentionedNames}\n{commentText}');
   assert.doesNotMatch(result.slackSettings.maskedWebhookUrl, /\/T\/B\/X$/);
+
+  const workflowResult = saveSlackSettings({
+    webhookUrl: 'https://hooks.slack.com/triggers/T/B/X'
+  });
+  assert.equal(workflowResult.slackSettings.webhookType, 'workflow');
+  assert.throws(() => saveSlackSettings({ webhookUrl: 'https://example.test/hook' }), /形式/);
 });

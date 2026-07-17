@@ -22,7 +22,8 @@ function readAll_(options) {
     comments: shouldRead(SHEET.COMMENTS) ? readObjects_(SHEET.COMMENTS) : [],
     activityLog: shouldRead(SHEET.ACTIVITY_LOG) ? readObjects_(SHEET.ACTIVITY_LOG) : [],
     milestones: shouldRead(SHEET.MILESTONES) ? readObjects_(SHEET.MILESTONES) : [],
-    meetings: shouldRead(SHEET.MEETINGS) ? readObjects_(SHEET.MEETINGS) : []
+    meetings: shouldRead(SHEET.MEETINGS) ? readObjects_(SHEET.MEETINGS) : [],
+    calendarOverrides: shouldRead(SHEET.CALENDAR_OVERRIDES) ? readObjects_(SHEET.CALENDAR_OVERRIDES) : []
   };
   rows.__loadedSheets = {};
   Object.keys(HEADERS).forEach(function (sheetName) {
@@ -58,6 +59,12 @@ function readMemberSnapshot_() {
 function readProjectSettingsSnapshot_() {
   return readAll_({
     sheets: [SHEET.MEMBERS, SHEET.MILESTONES, SHEET.MEETINGS]
+  });
+}
+
+function readCalendarSnapshot_() {
+  return readAll_({
+    sheets: [SHEET.MEMBERS, SHEET.CALENDAR_OVERRIDES]
   });
 }
 

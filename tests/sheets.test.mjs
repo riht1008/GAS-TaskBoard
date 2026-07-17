@@ -31,6 +31,11 @@ test('actual date columns are an append-only Nodes schema extension', () => {
   assert.match(configSource, /'DraftExpiresAt',\s*'ActualStartDate',\s*'ActualEndDate'\s*\]/);
 });
 
+test('SlackUserId is an append-only Members schema extension', () => {
+  assert.match(configSource, /HEADERS\[SHEET\.MEMBERS\] = \['MemberId', 'Name', 'Email', 'Color', 'Company', 'SlackUserId'\]/);
+  assert.match(configSource, /TEXT_COLUMNS\[SHEET\.MEMBERS\] = \['MemberId', 'Email', 'Color', 'SlackUserId'\]/);
+});
+
 test('normalizeCellValue formats milestone Date objects as yyyy-mm-dd in script timezone', () => {
   const value = new Date('2026-07-14T15:00:00.000Z');
 

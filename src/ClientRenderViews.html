@@ -255,6 +255,7 @@
       bindFormOnce('statusDialogForm', saveStatusFromDialog);
       bindFormOnce('memberForm', saveMemberFromDialog);
       bindFormOnce('projectSettingsForm', saveProjectSettingsDraft);
+      bindFormOnce('calendarOverrideForm', saveCalendarOverrideFromDialog);
     }
 
     function bindFormOnce(id, handler) {
@@ -723,10 +724,10 @@
             <div class="gantt-right" data-day-width="${scale.dayWidth}" data-start-day="${scale.startDay}">
               <div class="gantt-axis" style="width:${scale.width}px">${renderAxisTicks(scale)}</div>
               <div class="gantt-canvas" style="width:${scale.width}px;height:${height}px;--day-width:${scale.dayWidth}px">
-                ${renderWeekendBands(scale, height)}
+                ${renderNonWorkingDayBands(scale, height)}
                 ${renderGanttTimelineRows(timelineRows, scale)}
                 ${renderGanttInteractionRows(displayRows, emptyLaneCount, timelineHeight)}
-                ${todayLeft >= 0 && todayLeft <= scale.width ? `<div class="today-column" style="left:${todayLeft}px;height:${height}px" aria-hidden="true"></div>` : ''}
+                ${todayLeft >= 0 && todayLeft < scale.width ? `<div class="today-column" style="left:${todayLeft}px;width:${scale.dayWidth}px;height:${height}px" aria-hidden="true"></div>` : ''}
                 ${renderGanttArrows(displayRows, scale, height, timelineHeight)}
                 ${displayRows.map((node, index) => renderGanttBar(node, index, scale, timelineHeight)).join('')}
               </div>
@@ -819,7 +820,31 @@
     }
 
     function renderAxisTicks(scale) {
-      return `<div class="axis-months">${renderMonthBands(scale)}</div><div class="axis-ticks">${renderDateTicks(scale)}</div>`;
+      const dayActions = state.ganttZoom === 'day' ? renderCalendarAxisDayButtons(scale) : '';
+      return `<div class="axis-months">${renderMonthBands(scale)}</div><div class="axis-ticks"><div class="axis-tick-labels">${renderDateTicks(scale)}</div>${dayActions}</div>`;
+    }
+
+    function renderCalendarAxisDayButtons(scale) {
+      const today = localTodayDay();
+      const buttons = [];
+      for (let day = scale.startDay; day <= scale.endDay; day += 1) {
+        const info = projectCalendarDayInfo(day);
+        const kindClass = info.kind === 'saturday'
+          ? ' saturday'
+          : info.kind === 'holiday'
+            ? ' holiday'
+            : '';
+        const todayClass = day === today ? ' today' : '';
+        const overrideLabel = info.override ? '（手動設定）' : '';
+        const title = `${info.date} · ${info.name}${overrideLabel} · クリックして稼働日・休日を設定`;
+        buttons.push(`
+          <button class="axis-day-action${kindClass}${todayClass}" type="button"
+            data-action="calendar-edit-day" data-calendar-date="${h(info.date)}"
+            style="left:${(day - scale.startDay) * scale.dayWidth}px;width:${scale.dayWidth}px"
+            title="${h(title)}" aria-label="${h(title)}" ${state.currentMember ? '' : 'disabled'}></button>
+        `);
+      }
+      return buttons.join('');
     }
 
     function renderMonthBands(scale) {
@@ -871,14 +896,15 @@
       return ticks.join('');
     }
 
-    function renderWeekendBands(scale, height) {
+    function renderNonWorkingDayBands(scale, height) {
       if (state.ganttZoom !== 'day') return '';
       const bands = [];
       for (let day = scale.startDay; day <= scale.endDay; day += 1) {
-        const date = new Date(day * 86400000);
-        const dow = date.getUTCDay();
-        if (dow === 0 || dow === 6) {
-          bands.push(`<div class="gantt-weekend-band" style="left:${(day - scale.startDay) * scale.dayWidth}px;width:${scale.dayWidth}px;height:${height}px"></div>`);
+        const info = projectCalendarDayInfo(day);
+        if (info.kind === 'holiday') {
+          bands.push(`<div class="gantt-holiday-band" data-holiday-name="${h(info.name)}" style="left:${(day - scale.startDay) * scale.dayWidth}px;width:${scale.dayWidth}px;height:${height}px" aria-hidden="true"></div>`);
+        } else if (info.kind === 'saturday') {
+          bands.push(`<div class="gantt-saturday-band" style="left:${(day - scale.startDay) * scale.dayWidth}px;width:${scale.dayWidth}px;height:${height}px" aria-hidden="true"></div>`);
         }
       }
       return bands.join('');

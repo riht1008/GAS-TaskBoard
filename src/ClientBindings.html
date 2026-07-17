@@ -591,6 +591,7 @@
       if (action === 'calendar-select-day') return selectCalendarDay(event.currentTarget);
       if (action === 'calendar-today') return selectCalendarToday(event.currentTarget);
       if (action === 'calendar-clear') return clearCalendarSelection(event.currentTarget);
+      if (action === 'calendar-edit-day') return openCalendarOverrideDialog(event.currentTarget.dataset.calendarDate);
       if (action === 'gantt-jump-today') return jumpGanttToToday();
       if (action === 'toggle-gantt-timeline') {
         state.ganttTimelineCollapsed = !state.ganttTimelineCollapsed;
@@ -953,6 +954,7 @@
       if (scope === 'status') return state.dialog && state.dialog.type === 'status' ? state.dialog.draft : null;
       if (scope === 'member') return state.dialog && state.dialog.type === 'members' ? state.dialog.draft : null;
       if (scope === 'projectSettings') return state.dialog && state.dialog.type === 'projectSettings' ? state.dialog.draft : null;
+      if (scope === 'calendarOverride') return state.dialog && state.dialog.type === 'calendarOverride' ? state.dialog.draft : null;
       if (scope === 'join') return state.dialog && state.dialog.type === 'join' ? state.dialog.draft : null;
       if (scope === 'detail') return state.detailDraft;
       if (scope === 'dependency') return dependencyDraft();

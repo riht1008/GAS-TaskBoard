@@ -7,12 +7,20 @@ const views = fs.readFileSync(new URL('../src/ClientRenderViews.html', import.me
 const styles = fs.readFileSync(new URL('../src/Styles.html', import.meta.url), 'utf8');
 const bindings = fs.readFileSync(new URL('../src/ClientBindings.html', import.meta.url), 'utf8');
 const index = fs.readFileSync(new URL('../src/Index.html', import.meta.url), 'utf8');
+const utils = fs.readFileSync(new URL('../src/ClientUtils.html', import.meta.url), 'utf8');
 
 test('sync is exposed once as a topbar pill and WBS is secondary', () => {
   assert.equal((views.match(/data-action=\"force-sync\"/g) || []).length, 1);
   assert.match(views, /class=\"sync-pill sync-\$\{h\(state\.syncStatus\)\}\"/);
   assert.match(views, /class=\"button secondary\" data-action=\"confirm-export-wbs\"/);
   assert.doesNotMatch(views, />強制同期</);
+});
+
+test('sync pill keeps a stable label and does not animate transient states', () => {
+  assert.match(utils, /function syncPillLabel\(\) \{\s*return '同期';\s*\}/);
+  assert.match(utils, /function syncIconName\(\) \{\s*return 'refresh';\s*\}/);
+  assert.doesNotMatch(styles, /\.sync-pill\.sync-syncing[\s\S]{0,120}animation:/);
+  assert.doesNotMatch(styles, /\.sync-pill\.sync-(?:pending|local)/);
 });
 
 test('filters use progressive controls and a flexible bar', () => {

@@ -78,7 +78,8 @@ function setupProject(payload) {
         Name: memberName,
         Email: email,
         Color: memberColor,
-        Company: ''
+        Company: '',
+        SlackUserId: ''
       });
       rows.members.push(member);
     }

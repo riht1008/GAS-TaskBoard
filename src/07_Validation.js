@@ -171,6 +171,14 @@ function normalizeEmail_(email) {
   return cleanString_(email).toLowerCase();
 }
 
+function normalizeSlackUserId_(value) {
+  const slackUserId = cleanString_(value).toUpperCase();
+  if (slackUserId && !/^[UW][A-Z0-9]{2,31}$/.test(slackUserId)) {
+    throw new Error('SlackメンバーIDは U または W から始まる英数字で入力してください。');
+  }
+  return slackUserId;
+}
+
 function normalizeColor_(value) {
   const color = cleanString_(value);
   return /^#[0-9a-fA-F]{6}$/.test(color) ? color : '';
@@ -281,7 +289,8 @@ function nodeHasDependency_(nodeId, dependencies, nodesById) {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     validateNodeTree_: validateNodeTree_,
-    normalizeActualDates_: normalizeActualDates_
+    normalizeActualDates_: normalizeActualDates_,
+    normalizeSlackUserId_: normalizeSlackUserId_
   };
 }
 

@@ -5,7 +5,34 @@ import test from 'node:test';
 global.cleanString_ = value => value === null || value === undefined ? '' : String(value).trim();
 
 const require = createRequire(import.meta.url);
-const { addComment, commentPage_ } = require('../src/02_CollaborationApi.js');
+const { addComment, commentPage_, upsertMember } = require('../src/02_CollaborationApi.js');
+
+test('member updates reject a Slack member ID already linked to someone else', () => {
+  const members = [
+    { MemberId: 'm1', Name: '鈴木', Email: 'suzuki@example.com', Color: '#1E6F5C', Company: '', SlackUserId: 'U012AB3CD' },
+    { MemberId: 'm2', Name: '田中', Email: 'tanaka@example.com', Color: '#2F6FDB', Company: '', SlackUserId: '' }
+  ];
+  global.withLock_ = callback => callback();
+  global.requireSchemaExists_ = () => {};
+  global.readMemberSnapshot_ = () => ({ members });
+  global.requireCurrentMember_ = () => members[0];
+  global.normalizeEmail_ = value => String(value || '').trim().toLowerCase();
+  global.requireName_ = value => String(value || '').trim();
+  global.normalizeColor_ = value => String(value || '').trim();
+  global.normalizeSlackUserId_ = value => {
+    const id = String(value || '').trim().toUpperCase();
+    if (id && !/^[UW][A-Z0-9]{2,31}$/.test(id)) throw new Error('invalid Slack member ID');
+    return id;
+  };
+
+  assert.throws(() => upsertMember({
+    memberId: 'm2',
+    name: '田中',
+    email: 'tanaka@example.com',
+    color: '#2F6FDB',
+    slackUserId: 'u012ab3cd'
+  }), /同じSlackメンバーID/);
+});
 
 test('commentPage keeps replies with their parent and paginates parent threads', () => {
   const comments = [];

@@ -11,7 +11,7 @@
 
 - Google スプレッドシートにコンテナバインドされた GAS プロジェクト。1スプレッドシート＝1案件。
 - エンドユーザーUIは `doGet(e)` で配信する独立した Web アプリ（HTML Service）。スプレッドシートのメニュー／サイドバーは使わない。
-- データストアはスプレッドシートの各シート（Nodes / Members / StatusColumns / Dependencies / Comments）。
+- データストアはスプレッドシートの各シート（Nodes / Members / StatusColumns / Dependencies / Comments / ActivityLog / Milestones / Meetings / CalendarOverrides）。
 - 看板・ガント（フル機能）・リストの3ビュー＋タスク詳細モーダル＋メンバー管理画面。
 
 詳細な機能仕様は `docs/01要件定義・設計/要件定義書.md`、データモデル・画面設計・ロジック設計は `docs/01要件定義・設計/基本設計書.md` を参照。本ファイルとそれらの記述が矛盾する場合は、2文書を正としてこのファイルを更新すること。
@@ -55,7 +55,7 @@
    本人識別の基盤が消えるとアプリ全体が保存不能になるため。
 
 9. **日付は `YYYY-MM-DD` の文字列で統一。ネイティブDate型を使わない。**
-   スプレッドシートは書式指定なしだとテキストを日付値に自動変換するため、Nodes/Comments/Milestones/ActivityLog の日付・日時列は `setNumberFormat("@")` でテキスト書式に固定すること。WBSシートは一方向の出力アーティファクトであり、日数式を成立させるため日付値＋表示書式で出力してよい。
+   スプレッドシートは書式指定なしだとテキストを日付値に自動変換するため、Nodes/Comments/Milestones/ActivityLog/CalendarOverrides の日付・日時列は `setNumberFormat("@")` でテキスト書式に固定すること。WBSシートは一方向の出力アーティファクトであり、日数式を成立させるため日付値＋表示書式で出力してよい。
 
 10. **開始日・終了日は任意項目。未設定ノードはロールアップ計算から除外し、依存関係の先行/後続には設定不可。**
 
@@ -69,7 +69,7 @@
 14. **クライアント側に保存キューを実装する（基本設計書4.7）。**
     `google.script.run` は非同期・順序保証なし。同一ノードへの連続保存は直列化し、`requestId` を使って古い応答を破棄すること。これを省略すると「後から行った操作が、遅れて返ってきた古い保存結果で上書きされる」事故が起きる。
 
-15. **楽観的競合検知は Nodes シートのみ。** Members / StatusColumns / Dependencies / ActivityLog / Milestones / Meetings は LockService による直列化のみで、UpdatedAt照合は行わない（意図的な非対称性。全シートに同じ仕組みを足そうとしないこと）。
+15. **楽観的競合検知は Nodes シートのみ。** Members / StatusColumns / Dependencies / ActivityLog / Milestones / Meetings / CalendarOverrides は LockService による直列化のみで、UpdatedAt照合は行わない（意図的な非対称性。全シートに同じ仕組みを足そうとしないこと）。
 
 16. **完了列（IsDoneColumn）は常に厳密に1件のみ true。** 削除・切り替え操作で0件または複数件trueになる状態を一瞬たりとも許可しないこと。
 
@@ -79,18 +79,22 @@
 18. **WBSシートは一方向の出力アーティファクト。**
     アプリは `WBS` シートを読まない。`HEADERS` / `ensureSchema_` / `loadAll` に含めず、正本は常にアプリの各データシートとする。`exportWbs` は長時間の書式出力で全ユーザーの保存を止めないよう、意図的に `withLock_` を使わない。
 
+19. **案件カレンダーはガントの表示専用。**
+    CalendarOverrides には手動の `working` / `holiday` だけを保存し、「標準」は行を削除して自動判定へ戻す。タスク期間・日数、依存関係の制約判定や自動リスケジュール、親期間のロールアップ、WBS出力へは使用しない。
+
 ## 4. データモデル早見表
 
 | シート | 役割 |
 |---|---|
 | Nodes | プロジェクト・グループ・タスクを ParentId 参照で統一管理。Type列は持たない（子を持つかどうかは実行時判定） |
-| Members | 担当者・投稿者候補。Email列で本人と照合 |
+| Members | 担当者・投稿者候補。Email列で本人と照合し、任意のSlackUserIdでSlack本人メンションと紐づける |
 | StatusColumns | 看板の列定義。IsDoneColumnは常に1件のみtrue |
 | Dependencies | 末端ノード間の先行・後続関係 |
 | Comments | ノードごとのコメント（AuthorNameを投稿時点でスナップショット保存） |
 | ActivityLog | ステータス・進捗変更の追記専用ログ |
 | Milestones | WBS出力用マイルストーン |
 | Meetings | WBS出力用会議体 |
+| CalendarOverrides | ガント表示用の案件共通カレンダー例外（Dateごとにworking / holiday） |
 
 詳細な列定義は `docs/01要件定義・設計/基本設計書.md` 2章を参照。
 

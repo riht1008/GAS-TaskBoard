@@ -235,6 +235,14 @@
       return next;
     }
 
+    function normalizeLoadedCalendarOverride(override) {
+      const next = Object.assign({}, override);
+      next.date = normalizeClientDateText(next.date);
+      next.dayType = next.dayType === 'working' ? 'working' : 'holiday';
+      next.name = cleanText(next.name);
+      return next;
+    }
+
     function weekdayOfDateText(dateText) {
       if (!isClientDateText(dateText)) return 1;
       return new Date(dateToDay(dateText) * 86400000).getUTCDay();
@@ -526,6 +534,10 @@
       return cleanText(value).toLowerCase();
     }
 
+    function normalizeClientSlackUserId(value) {
+      return cleanText(value).toUpperCase();
+    }
+
     function dateToDay(value) {
       if (!value) return 0;
       const parts = String(value).split('-').map(Number);
@@ -538,6 +550,155 @@
       const m = String(date.getUTCMonth() + 1).padStart(2, '0');
       const d = String(date.getUTCDate()).padStart(2, '0');
       return `${y}-${m}-${d}`;
+    }
+
+    function japaneseHolidayName(value) {
+      const day = typeof value === 'number' ? value : dateToDay(value);
+      if (!Number.isFinite(day)) return '';
+      const dateText = dayToDate(day);
+      const year = Number(dateText.slice(0, 4));
+      return japaneseHolidaysForYear(year).get(dateText) || '';
+    }
+
+    function projectCalendarDayInfo(value) {
+      const day = typeof value === 'number' ? value : dateToDay(value);
+      const date = dayToDate(day);
+      const dow = new Date(day * 86400000).getUTCDay();
+      const nationalHolidayName = japaneseHolidayName(day);
+      let kind = nationalHolidayName || dow === 0 ? 'holiday' : dow === 6 ? 'saturday' : 'working';
+      let name = nationalHolidayName || (dow === 0 ? '日曜日' : dow === 6 ? '土曜日' : '稼働日');
+      const override = typeof state !== 'undefined' && state.calendarOverrideByDate
+        ? state.calendarOverrideByDate.get(date)
+        : null;
+      if (override && override.dayType === 'working') {
+        kind = 'working';
+        name = override.name || '稼働日';
+      } else if (override && override.dayType === 'holiday') {
+        kind = 'holiday';
+        name = override.name || '休日';
+      }
+      return {
+        day,
+        date,
+        kind,
+        name,
+        isWorking: kind === 'working',
+        override: override || null
+      };
+    }
+
+    function japaneseHolidaysForYear(value) {
+      const year = Math.floor(Number(value));
+      if (!japaneseHolidaysForYear.cache) japaneseHolidaysForYear.cache = new Map();
+      if (japaneseHolidaysForYear.cache.has(year)) return japaneseHolidaysForYear.cache.get(year);
+
+      const holidays = new Map();
+      japaneseHolidaysForYear.cache.set(year, holidays);
+      // Rules-based Japanese national holidays, including substitute and citizens' holidays.
+      // Equinox calculations are bounded to the supported modern-calendar range.
+      if (!Number.isFinite(year) || year < 1948 || year > 2099) return holidays;
+
+      const add = (month, day, name) => {
+        const dateText = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        holidays.set(dateText, name);
+      };
+      const addNthMonday = (month, nth, name) => add(month, nthWeekdayOfMonth(year, month, 1, nth), name);
+
+      if (year >= 1949) {
+        add(1, 1, '元日');
+        if (year >= 2000) addNthMonday(1, 2, '成人の日');
+        else add(1, 15, '成人の日');
+      }
+      if (year >= 1967) add(2, 11, '建国記念の日');
+      if (year >= 2020) add(2, 23, '天皇誕生日');
+      if (year >= 1949) add(3, japaneseEquinoxDay(year, 'spring'), '春分の日');
+
+      if (year >= 2007) add(4, 29, '昭和の日');
+      else if (year >= 1989) add(4, 29, 'みどりの日');
+      else if (year >= 1949) add(4, 29, '天皇誕生日');
+      if (year >= 1949) {
+        add(5, 3, '憲法記念日');
+        if (year >= 2007) add(5, 4, 'みどりの日');
+        add(5, 5, 'こどもの日');
+      }
+
+      if (year >= 1996) {
+        if (year === 2020) add(7, 23, '海の日');
+        else if (year === 2021) add(7, 22, '海の日');
+        else if (year >= 2003) addNthMonday(7, 3, '海の日');
+        else add(7, 20, '海の日');
+      }
+      if (year >= 2016) {
+        if (year === 2020) add(8, 10, '山の日');
+        else if (year === 2021) add(8, 8, '山の日');
+        else add(8, 11, '山の日');
+      }
+      if (year >= 1966) {
+        if (year >= 2003) addNthMonday(9, 3, '敬老の日');
+        else add(9, 15, '敬老の日');
+      }
+      add(9, japaneseEquinoxDay(year, 'autumn'), '秋分の日');
+      if (year >= 1966) {
+        if (year === 2020) add(7, 24, 'スポーツの日');
+        else if (year === 2021) add(7, 23, 'スポーツの日');
+        else if (year >= 2000) addNthMonday(10, 2, 'スポーツの日');
+        else add(10, 10, '体育の日');
+      }
+      add(11, 3, '文化の日');
+      add(11, 23, '勤労感謝の日');
+      if (year >= 1989 && year <= 2018) add(12, 23, '天皇誕生日');
+
+      const specialHolidays = {
+        1959: [[4, 10, '皇太子明仁親王の結婚の儀']],
+        1989: [[2, 24, '昭和天皇の大喪の礼']],
+        1990: [[11, 12, '即位礼正殿の儀']],
+        1993: [[6, 9, '皇太子徳仁親王の結婚の儀']],
+        2019: [[5, 1, '天皇の即位の日'], [10, 22, '即位礼正殿の儀']]
+      };
+      (specialHolidays[year] || []).forEach(item => add(item[0], item[1], item[2]));
+
+      const nationalHolidayDates = new Set(holidays.keys());
+      if (year >= 1986) {
+        const startDay = dateToDay(`${year}-01-02`);
+        const endDay = dateToDay(`${year}-12-30`);
+        for (let day = startDay; day <= endDay; day += 1) {
+          const dateText = dayToDate(day);
+          if (nationalHolidayDates.has(dateText)) continue;
+          if (nationalHolidayDates.has(dayToDate(day - 1)) && nationalHolidayDates.has(dayToDate(day + 1))) {
+            holidays.set(dateText, '国民の休日');
+          }
+        }
+      }
+
+      if (year >= 1973) {
+        Array.from(nationalHolidayDates).sort().forEach(dateText => {
+          const holidayDay = dateToDay(dateText);
+          if (holidayDay < dateToDay('1973-04-12')) return;
+          if (new Date(holidayDay * 86400000).getUTCDay() !== 0) return;
+          let substituteDay = holidayDay + 1;
+          if (year >= 2007) {
+            while (holidays.has(dayToDate(substituteDay))) substituteDay += 1;
+          }
+          const substituteDate = dayToDate(substituteDay);
+          if (!holidays.has(substituteDate)) holidays.set(substituteDate, '振替休日');
+        });
+      }
+      return holidays;
+    }
+
+    function nthWeekdayOfMonth(year, month, weekday, nth) {
+      const firstWeekday = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
+      return 1 + (weekday - firstWeekday + 7) % 7 + (nth - 1) * 7;
+    }
+
+    function japaneseEquinoxDay(year, season) {
+      const spring = season === 'spring';
+      if (year <= 1979) {
+        const base = spring ? 20.8357 : 23.2588;
+        return Math.floor(base + 0.242194 * (year - 1980) - Math.floor((year - 1983) / 4));
+      }
+      const base = spring ? 20.8431 : 23.2488;
+      return Math.floor(base + 0.242194 * (year - 1980) - Math.floor((year - 1980) / 4));
     }
 
     function localTodayDay() {
@@ -783,11 +944,7 @@
     }
 
     function syncIconName() {
-      if (state.syncStatus === 'syncing') return 'refresh';
-      if (state.syncStatus === 'error') return 'alert-circle';
-      if (state.syncStatus === 'local') return 'database';
-      if (state.syncStatus === 'pending') return 'database';
-      return 'check-circle';
+      return 'refresh';
     }
 
     function syncLabel() {
@@ -802,14 +959,7 @@
     }
 
     function syncPillLabel() {
-      if (state.syncStatus === 'syncing') return '同期中';
-      if (state.syncStatus === 'error') return '同期エラー';
-      if (state.syncStatus === 'local') return 'ローカル';
-      if (state.syncStatus === 'pending') return '保存待ち';
-      if (!state.lastSyncAt) return '同期待ち';
-      const date = new Date(state.lastSyncAt);
-      if (Number.isNaN(date.getTime())) return '同期済み';
-      return date.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+      return '同期';
     }
 
     function formatShortRange(start, end) {

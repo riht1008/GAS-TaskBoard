@@ -3,7 +3,7 @@
 
     const FOCUS_DESCRIPTOR_KEYS = [
       'action', 'cardId', 'openNode', 'view', 'tab', 'dropdownTrigger', 'memberId',
-      'milestoneId', 'meetingId', 'dependencyId', 'columnId', 'nodeId'
+      'milestoneId', 'meetingId', 'dependencyId', 'columnId', 'nodeId', 'calendarDate'
     ];
 
     function focusDataAttributeName(key) {
@@ -350,7 +350,7 @@
       state.dialog = {
         type: 'members',
         opener: captureActiveFocusDescriptor(),
-        draft: { memberId: '', name: '', email: '', company: '', color: defaultMemberColor() }
+        draft: { memberId: '', name: '', email: '', company: '', slackUserId: '', color: defaultMemberColor() }
       };
       render();
     }
@@ -361,6 +361,7 @@
         opener: captureActiveFocusDescriptor(),
         draft: {
           name: (state.currentEmail || '').split('@')[0] || '',
+          slackUserId: '',
           color: defaultMemberColor()
         }
       };
@@ -375,12 +376,18 @@
         showToast('氏名を入力', 'error');
         return;
       }
+      const slackUserId = normalizeClientSlackUserId(draft.slackUserId);
+      if (slackUserId && !/^[UW][A-Z0-9]{2,31}$/.test(slackUserId)) {
+        showToast('SlackメンバーIDはUまたはWから始まる英数字です', 'error');
+        return;
+      }
       const memberId = newClientId('member');
       const optimisticMember = {
         id: memberId,
         name: cleanText(draft.name),
         email: normalizeClientEmail(state.currentEmail),
-        color: normalizeHex(draft.color) || defaultMemberColor()
+        color: normalizeHex(draft.color) || defaultMemberColor(),
+        slackUserId
       };
       const previousMembers = cloneValue(state.members);
       const previousMember = state.currentMember ? cloneValue(state.currentMember) : null;
@@ -389,7 +396,8 @@
       queueBackgroundMutation('members', 'joinAsMember', {
         clientMemberId: memberId,
         name: draft.name,
-        color: draft.color
+        color: draft.color,
+        slackUserId
       }, () => {
         const index = state.members.findIndex(member => member.email === optimisticMember.email || member.id === memberId);
         if (index === -1) state.members.push(optimisticMember);
@@ -417,6 +425,11 @@
         showToast('氏名とメールを入力', 'error');
         return;
       }
+      const slackUserId = normalizeClientSlackUserId(draft.slackUserId);
+      if (slackUserId && !/^[UW][A-Z0-9]{2,31}$/.test(slackUserId)) {
+        showToast('SlackメンバーIDはUまたはWから始まる英数字です', 'error');
+        return;
+      }
       const previousMembers = cloneValue(state.members);
       const memberId = draft.memberId || newClientId('member');
       const optimisticMember = {
@@ -424,7 +437,8 @@
         name: cleanText(draft.name),
         email: normalizeClientEmail(draft.email),
         color: normalizeHex(draft.color) || defaultMemberColor(),
-        company: cleanText(draft.company)
+        company: cleanText(draft.company),
+        slackUserId
       };
       queueBackgroundMutation('members', 'upsertMember', {
         memberId: draft.memberId,
@@ -432,13 +446,14 @@
         name: draft.name,
         email: draft.email,
         company: draft.company,
-        color: draft.color
+        color: draft.color,
+        slackUserId
       }, () => {
         const index = state.members.findIndex(member => member.id === memberId);
         if (index === -1) state.members.push(optimisticMember);
         else state.members[index] = optimisticMember;
         if (state.dialog && state.dialog.type === 'members') {
-          state.dialog.draft = { memberId: '', name: '', email: '', company: '', color: defaultMemberColor() };
+          state.dialog.draft = { memberId: '', name: '', email: '', company: '', slackUserId: '', color: defaultMemberColor() };
         }
       }, () => {
         state.members = previousMembers;
@@ -453,6 +468,7 @@
         name: member.name,
         email: member.email,
         company: member.company || '',
+        slackUserId: member.slackUserId || '',
         color: member.color || defaultMemberColor()
       };
       render();
@@ -467,7 +483,7 @@
 
     function clearMemberDraft() {
       if (!state.dialog || state.dialog.type !== 'members') return;
-      state.dialog.draft = { memberId: '', name: '', email: '', company: '', color: defaultMemberColor() };
+      state.dialog.draft = { memberId: '', name: '', email: '', company: '', slackUserId: '', color: defaultMemberColor() };
       render();
     }
 
@@ -527,6 +543,78 @@
         draft: drafts[state.projectSettingsTab]
       };
       render();
+    }
+
+    function openCalendarOverrideDialog(dateText) {
+      const date = normalizeClientDateText(dateText);
+      if (!state.currentMember) {
+        showToast('メンバー未登録のため保存不可', 'error');
+        return;
+      }
+      if (!isClientDateText(date)) return;
+      const existing = state.calendarOverrideByDate.get(date);
+      state.dialog = {
+        type: 'calendarOverride',
+        opener: captureActiveFocusDescriptor(),
+        draft: {
+          startDate: date,
+          endDate: date,
+          dayType: existing ? existing.dayType : 'standard',
+          name: existing ? existing.name || '' : ''
+        }
+      };
+      render();
+    }
+
+    function saveCalendarOverrideFromDialog() {
+      const dialog = state.dialog;
+      if (!dialog || dialog.type !== 'calendarOverride') return;
+      const draft = { ...dialog.draft };
+      const startDate = normalizeClientDateText(draft.startDate);
+      const endDate = normalizeClientDateText(draft.endDate || draft.startDate);
+      const dayType = ['working', 'holiday'].includes(draft.dayType) ? draft.dayType : 'standard';
+      const name = dayType === 'standard' ? '' : cleanText(draft.name);
+      if (!isClientDateText(startDate) || !isClientDateText(endDate)) {
+        showToast('対象期間を入力してください', 'error');
+        return;
+      }
+      if (endDate < startDate) {
+        showToast('終了日は開始日以降にしてください', 'error');
+        return;
+      }
+      if (dateToDay(endDate) - dateToDay(startDate) + 1 > 366) {
+        showToast('一度に設定できる期間は366日以内です', 'error');
+        return;
+      }
+      if (name.length > 100) {
+        showToast('名称は100文字以内で入力してください', 'error');
+        return;
+      }
+
+      const previous = cloneValue(state.calendarOverrides);
+      closeDialog(false);
+      queueBackgroundMutation('calendar-overrides', 'saveCalendarOverrides', {
+        startDate,
+        endDate,
+        dayType,
+        name
+      }, () => {
+        const startDay = dateToDay(startDate);
+        const endDay = dateToDay(endDate);
+        state.calendarOverrides = state.calendarOverrides.filter(item => {
+          const day = dateToDay(item.date);
+          return day < startDay || day > endDay;
+        });
+        if (dayType !== 'standard') {
+          for (let day = startDay; day <= endDay; day += 1) {
+            state.calendarOverrides.push({ date: dayToDate(day), dayType, name });
+          }
+        }
+      }, () => {
+        state.calendarOverrides = previous;
+      }, {
+        onSuccess: () => showToast('稼働日・休日の設定を保存しました', 'success')
+      });
     }
 
     function defaultProjectSettingsDraft(tab) {

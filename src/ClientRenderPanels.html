@@ -10,8 +10,6 @@
       const doneColumnId = doneStatusColumnId();
       const progressValue = draft.statusColumnId === doneColumnId ? 100 : normalizeProgressValue(draft.progress) === null ? 0 : normalizeProgressValue(draft.progress);
       const ancestorExcluded = hasWbsExcludedAncestor(node.id);
-      const inferredActualRange = formatRange(node.inferredActualStartDate || '', node.inferredActualEndDate || '');
-      const hasActualOverride = Boolean(draft.actualStartDate && draft.actualEndDate);
       const showSaveFooter = Boolean(state.shellNodeId && state.shellNodeId === node.id) || hasUnsavedDetailDraft();
       const descriptionPreview = draft.description
         ? `<div class="markdown-body">${renderMarkdown(draft.description, [])}</div>`
@@ -94,11 +92,7 @@
                   <div class="section-title">実績</div>
                   ${renderDetailPropertyRow('着手日', renderDatePicker({ scope: 'detail', field: 'actualStartDate', selected: draft.actualStartDate, disabled: !state.currentMember, endDate: draft.actualEndDate, plain: true, ariaLabel: '実績着手日', placeholder: '自動' }))}
                   ${renderDetailPropertyRow('終了日', renderDatePicker({ scope: 'detail', field: 'actualEndDate', selected: draft.actualEndDate, disabled: !state.currentMember, startDate: draft.actualStartDate, minDate: draft.actualStartDate, plain: true, ariaLabel: '実績終了日', placeholder: '自動' }))}
-                  <div class="field-hint">${hasActualOverride
-                    ? '手動設定した実績期間をWBSへ反映します'
-                    : inferredActualRange
-                      ? `自動算出: ${h(inferredActualRange)}`
-                      : '未設定時はステータス・進捗の変更履歴から自動算出します'}</div>
+                  <div class="field-hint">空欄は変更履歴から自動算出し、WBSへ反映します</div>
                 </section>
                 <section class="drawer-section detail-property-section">
                   <div class="section-title">WBS</div>
@@ -383,7 +377,58 @@
       if (dialog.type === 'join') return renderJoinDialog(dialog);
       if (dialog.type === 'members') return renderMembersDialog();
       if (dialog.type === 'projectSettings') return renderProjectSettingsDialog();
+      if (dialog.type === 'calendarOverride') return renderCalendarOverrideDialog(dialog);
       return '';
+    }
+
+    function renderCalendarOverrideDialog(dialog) {
+      const draft = dialog.draft;
+      const standard = draft.dayType === 'standard';
+      return `
+        ${renderOverlay('close-dialog')}
+        <div class="modal-shell">
+          <form class="modal calendar-override-modal" id="calendarOverrideForm">
+            <header class="modal-head">
+              <div class="modal-title">稼働日・休日の設定</div>
+              <button class="button ghost icon" type="button" data-action="close-dialog" aria-label="稼働日・休日の設定を閉じる">${icon('x')}</button>
+            </header>
+            <div class="modal-body">
+              <div class="field-grid">
+                <label class="field">
+                  <span class="field-label">開始日</span>
+                  ${renderDatePicker({ scope: 'calendarOverride', field: 'startDate', selected: draft.startDate, endDate: draft.endDate, placeholder: '必須' })}
+                </label>
+                <label class="field">
+                  <span class="field-label">終了日</span>
+                  ${renderDatePicker({ scope: 'calendarOverride', field: 'endDate', selected: draft.endDate, startDate: draft.startDate, minDate: draft.startDate, placeholder: '必須' })}
+                </label>
+                <label class="field wide">
+                  <span class="field-label">日の扱い</span>
+                  ${renderDropdown({
+                    scope: 'calendarOverride',
+                    field: 'dayType',
+                    selected: draft.dayType || 'standard',
+                    options: [
+                      { value: 'standard', label: '標準（土日・日本の祝日から自動判定）' },
+                      { value: 'working', label: '稼働日' },
+                      { value: 'holiday', label: '休日' }
+                    ]
+                  })}
+                </label>
+                <label class="field wide">
+                  <span class="field-label">名称（任意）</span>
+                  <input class="input" data-draft-scope="calendarOverride" data-draft-field="name" maxlength="100" value="${h(standard ? '' : draft.name)}" placeholder="夏季休暇、休日出勤など" ${standard ? 'disabled' : ''}>
+                </label>
+              </div>
+              <div class="calendar-override-note">ガントの表示色だけを変更します。タスクの日程、日数、依存関係、WBSには影響しません。</div>
+            </div>
+            <footer class="modal-foot">
+              ${renderCloseButton('close-dialog')}
+              ${renderSubmitButton({ submitting: Boolean(dialog.submitting), iconName: 'check', label: '適用' })}
+            </footer>
+          </form>
+        </div>
+      `;
     }
 
     function renderJoinDialog(dialog) {
@@ -403,6 +448,11 @@
                 <label class="field">
                   <span class="field-label">氏名</span>
                   <input class="input" data-draft-scope="join" data-draft-field="name" value="${h(draft.name)}" autofocus>
+                </label>
+                <label class="field">
+                  <span class="field-label">SlackメンバーID（任意）</span>
+                  <input class="input mono" maxlength="32" data-draft-scope="join" data-draft-field="slackUserId" value="${h(draft.slackUserId || '')}" placeholder="U012AB3CD">
+                  <span class="field-hint">Slackのプロフィール → その他（…）→「メンバーIDをコピー」で確認できます</span>
                 </label>
                 <div class="field">
                   <span class="field-label">表示色</span>
@@ -584,6 +634,11 @@
                   <span class="field-label">会社名</span>
                   <input class="input" data-draft-scope="member" data-draft-field="company" value="${h(draft.company)}">
                 </label>
+                <label class="field">
+                  <span class="field-label">SlackメンバーID（任意）</span>
+                  <input class="input mono" maxlength="32" data-draft-scope="member" data-draft-field="slackUserId" value="${h(draft.slackUserId || '')}" placeholder="U012AB3CD">
+                  <span class="field-hint">プロフィール → その他（…）→「メンバーIDをコピー」。設定するとコメント通知で本人へメンションします</span>
+                </label>
                 <div class="field">
                   <span class="field-label">色</span>
                   ${renderColorPicker('member', 'color', draft.color, MEMBER_COLOR_PRESETS)}
@@ -608,7 +663,7 @@
         <div class="member-row">
           <div class="member-main">
             <div class="member-name">${renderAvatar(member)} <span>${h(member.name)}</span></div>
-            <div class="member-email">${member.company ? `${h(member.company)} · ` : ''}${h(member.email)} · ${assignedCount}件</div>
+            <div class="member-email">${member.company ? `${h(member.company)} · ` : ''}${h(member.email)} · ${member.slackUserId ? `Slack ${h(member.slackUserId)}` : 'Slack未連携'} · ${assignedCount}件</div>
           </div>
           <div class="inline-actions">
             <button class="button secondary compact" data-action="edit-member" data-member-id="${h(member.id)}" ${submitting ? 'disabled' : ''}>編集</button>
@@ -648,13 +703,16 @@
       const settings = state.slackSettings || {};
       // GAS HtmlService can treat a literal protocol separator in an injected
       // script fragment as a line comment while evaluating Index.html.
-      const webhookPlaceholder = ['https:', '', 'hooks.slack.com/services/...'].join('/');
+      const incomingWebhookPlaceholder = ['https:', '', 'hooks.slack.com/services/...'].join('/');
+      const workflowWebhookPlaceholder = ['https:', '', 'hooks.slack.com/triggers/...'].join('/');
+      const workflowHelpUrl = ['https:', '', 'slack.com/help/articles/360041352714-Build-a-workflow--Create-a-workflow-that-starts-outside-of-Slack'].join('/');
+      const webhookPlaceholder = `${workflowWebhookPlaceholder} または ${incomingWebhookPlaceholder}`;
       return `
         <form id="projectSettingsForm" class="field-grid">
           <label class="field wide">
-            <span class="field-label">Incoming Webhook URL</span>
+            <span class="field-label">Slack Webhook URL</span>
             <input class="input" type="password" autocomplete="off" data-draft-scope="projectSettings" data-draft-field="webhookUrl" value="${h(draft.webhookUrl || '')}" placeholder="${settings.configured ? h(settings.maskedWebhookUrl || '設定済み') : webhookPlaceholder}">
-            <span class="field-hint">保存後、URLはブラウザへ返しません</span>
+            <span class="field-hint">ワークフローWebhook（triggers）とIncoming Webhook（services）の両方に対応。保存後、URLはブラウザへ返しません</span>
           </label>
           <label class="field wide">
             <span class="switch"><input type="checkbox" data-draft-scope="projectSettings" data-draft-field="statusChangeEnabled" ${checked(draft.statusChangeEnabled !== false)}> ステータス変更を通知</span>
@@ -669,12 +727,12 @@
           </div>
           <label class="field wide">
             <span class="switch"><input type="checkbox" data-draft-scope="projectSettings" data-draft-field="mentionEnabled" ${checked(draft.mentionEnabled === true)}> コメントのメンションを通知</span>
-            <span class="field-hint">メンション対象者名を含む1件の通知を、このWebhookのチャンネルへ送信します</span>
+            <span class="field-hint">SlackメンバーIDを登録済みの対象者には本人メンション、未登録の対象者には名前だけを表示します</span>
           </label>
           <div class="field wide">
             <label class="field-label" for="slackMentionTemplate">メンションの送信文面</label>
             <textarea class="textarea slack-template-textarea" id="slackMentionTemplate" rows="8" maxlength="2000" aria-describedby="slackMentionTemplateHelp" data-draft-scope="projectSettings" data-draft-field="mentionTemplate">${h(draft.mentionTemplate || SLACK_DEFAULT_MENTION_TEMPLATE)}</textarea>
-            <span class="field-hint mono" id="slackMentionTemplateHelp">使用可能: {taskName} {parentPath} {mentionedNames} {actorName} {commentText} {webAppUrl}</span>
+            <span class="field-hint mono" id="slackMentionTemplateHelp">使用可能: {taskName} {parentPath} {mentionedUsers} {mentionedNames} {actorName} {commentText} {webAppUrl}</span>
             <div class="inline-actions">
               <button class="button secondary compact" type="button" data-action="reset-slack-template" data-template-field="mentionTemplate" aria-label="メンションの送信文面をデフォルトに戻す">デフォルトに戻す</button>
             </div>
@@ -686,8 +744,18 @@
           </div>
         </form>
         <div class="drawer-section">
+          <div class="section-title">ワークフローWebhookの作り方</div>
+          <ol class="meta-line">
+            <li>Slackの「その他 → ツール → ワークフロー」から新しいワークフローを作成</li>
+            <li>開始方法に「Webhookから」を選び、テキスト型の変数 <span class="mono">text</span> を追加</li>
+            <li>「チャンネルにメッセージを送信」ステップを追加し、本文へ <span class="mono">text</span> 変数を挿入</li>
+            <li>公開して、発行された <span class="mono">/triggers/...</span> のURLを上へ貼り付け</li>
+          </ol>
+          <div class="meta-line"><a href="${h(workflowHelpUrl)}" target="_blank" rel="noopener noreferrer">Slack公式の手順を開く</a></div>
+        </div>
+        <div class="drawer-section">
           <div class="section-title">接続状態</div>
-          <div class="meta-line">${settings.configured ? '設定済み' : '未設定'}${settings.lastResponseCode ? ` · HTTP ${Number(settings.lastResponseCode)}` : ''}</div>
+          <div class="meta-line">${settings.configured ? `設定済み（${settings.webhookType === 'workflow' ? 'ワークフローWebhook' : 'Incoming Webhook'}）` : '未設定'}${settings.lastResponseCode ? ` · HTTP ${Number(settings.lastResponseCode)}` : ''}</div>
           ${settings.lastSuccessAt ? `<div class="meta-line">最終成功: ${h(formatDateTime(settings.lastSuccessAt))}</div>` : ''}
           ${settings.lastErrorAt ? `<div class="meta-line">最終失敗: ${h(formatDateTime(settings.lastErrorAt))} · ${h(settings.lastError || '')}</div>` : ''}
         </div>

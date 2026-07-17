@@ -51,6 +51,9 @@ test('Slack settings expose independent notification choices and editable defaul
   assert.match(panelsSource, /data-draft-field="mentionEnabled"/);
   assert.match(panelsSource, /data-draft-field="statusTemplate"/);
   assert.match(panelsSource, /data-draft-field="mentionTemplate"/);
+  assert.match(panelsSource, /hooks\.slack\.com\/triggers/);
+  assert.match(panelsSource, /data-draft-field="slackUserId"/);
+  assert.match(panelsSource, /\{mentionedUsers\}/);
   assert.match(panelsSource, /デフォルトに戻す/);
 });
 

@@ -9,7 +9,7 @@ var SLACK_TEMPLATE_MAX_LENGTH = 2000;
 var SLACK_RENDERED_MESSAGE_MAX_LENGTH = 3000;
 var SLACK_COMMENT_EXCERPT_MAX_LENGTH = 1200;
 var SLACK_STATUS_TEMPLATE_KEYS = ['taskName', 'parentPath', 'beforeStatus', 'afterStatus', 'actorName', 'webAppUrl'];
-var SLACK_MENTION_TEMPLATE_KEYS = ['taskName', 'parentPath', 'mentionedNames', 'actorName', 'commentText', 'webAppUrl'];
+var SLACK_MENTION_TEMPLATE_KEYS = ['taskName', 'parentPath', 'mentionedUsers', 'mentionedNames', 'actorName', 'commentText', 'webAppUrl'];
 var SLACK_DEFAULT_STATUS_TEMPLATE = [
   '*タスクのステータスが変更されました*',
   '*タスク*: {taskName}',
@@ -22,7 +22,7 @@ var SLACK_DEFAULT_MENTION_TEMPLATE = [
   '*コメントでメンションされました*',
   '*タスク*: {taskName}',
   '*親パス*: {parentPath}',
-  '*メンション対象*: {mentionedNames}',
+  '*メンション対象*: {mentionedUsers}',
   '*投稿者*: {actorName}',
   '*コメント*',
   '{commentText}',
@@ -53,6 +53,7 @@ function buildMentionNotification_(node, comment, actor, mentionedMembers, rows)
   return buildSlackTemplatePayload_(settings.mentionTemplate, {
     taskName: cleanString_(node.Name),
     parentPath: path || '-',
+    mentionedUsers: slackMentionedUsers_(mentionedMembers),
     mentionedNames: (mentionedMembers || []).map(function (member) { return cleanString_(member.Name); }).filter(Boolean).join(', ') || '-',
     actorName: actor ? cleanString_(actor.Name) : '不明',
     commentText: cleanString_(comment.Text).slice(0, SLACK_COMMENT_EXCERPT_MAX_LENGTH),
@@ -75,8 +76,22 @@ function renderSlackTemplate_(template, variables, fallback, allowedKeys) {
   const normalized = normalizeSlackTemplate_(template, fallback, allowedKeys, false);
   const values = variables || {};
   return normalized.replace(/\{([A-Za-z][A-Za-z0-9]*)\}/g, function (match, key) {
-    return Object.prototype.hasOwnProperty.call(values, key) ? slackEscape_(values[key]) : match;
+    if (!Object.prototype.hasOwnProperty.call(values, key)) return match;
+    // mentionedUsers is assembled only from validated Slack member IDs and escaped names.
+    // Escaping it again would turn <@U...> into plain text and suppress the notification.
+    return key === 'mentionedUsers' ? cleanString_(values[key]) : slackEscape_(values[key]);
   }).slice(0, SLACK_RENDERED_MESSAGE_MAX_LENGTH);
+}
+
+function slackMentionedUsers_(members) {
+  const labels = (members || []).map(function (member) {
+    const slackUserId = cleanString_(member.SlackUserId).toUpperCase();
+    if (/^[UW][A-Z0-9]{2,31}$/.test(slackUserId)) {
+      return '<@' + slackUserId + '>';
+    }
+    return slackEscape_(member.Name);
+  }).filter(Boolean);
+  return labels.join(', ') || '-';
 }
 
 function normalizeSlackTemplate_(value, fallback, allowedKeys, strict) {
@@ -111,7 +126,7 @@ function postToSlack_(payload, options) {
     const response = UrlFetchApp.fetch(webhookUrl, {
       method: 'post',
       contentType: 'application/json',
-      payload: JSON.stringify(payload),
+      payload: JSON.stringify(slackRequestPayload_(webhookUrl, payload)),
       muteHttpExceptions: true
     });
     const responseCode = Number(response.getResponseCode()) || 0;
@@ -152,8 +167,8 @@ function saveSlackSettings(payload) {
     requireCurrentMember_();
     const properties = PropertiesService.getScriptProperties();
     const webhookUrl = cleanString_(payload.webhookUrl);
-    if (webhookUrl && !/^https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9_\/-]+$/.test(webhookUrl)) {
-      throw new Error('Slack Incoming Webhook URL の形式が正しくありません。');
+    if (webhookUrl && !slackWebhookType_(webhookUrl)) {
+      throw new Error('Slack Webhook URL の形式が正しくありません。services または triggers のURLを入力してください。');
     }
     if (webhookUrl) properties.setProperty(SLACK_WEBHOOK_KEY, webhookUrl);
     const current = slackNotificationSettings_();
@@ -164,6 +179,7 @@ function saveSlackSettings(payload) {
       mentionEnabled: Object.prototype.hasOwnProperty.call(payload, 'mentionEnabled')
         ? payload.mentionEnabled === true
         : current.mentionEnabled,
+      mentionTemplateVersion: 2,
       statusTemplate: Object.prototype.hasOwnProperty.call(payload, 'statusTemplate')
         ? normalizeSlackTemplate_(payload.statusTemplate, SLACK_DEFAULT_STATUS_TEMPLATE, SLACK_STATUS_TEMPLATE_KEYS, true)
         : current.statusTemplate,
@@ -216,7 +232,12 @@ function slackNotificationSettings_() {
       statusChangeEnabled: parsed.statusChangeEnabled !== false,
       mentionEnabled: parsed.mentionEnabled === true,
       statusTemplate: normalizeSlackTemplate_(parsed.statusTemplate, SLACK_DEFAULT_STATUS_TEMPLATE, SLACK_STATUS_TEMPLATE_KEYS, false),
-      mentionTemplate: normalizeSlackTemplate_(parsed.mentionTemplate, SLACK_DEFAULT_MENTION_TEMPLATE, SLACK_MENTION_TEMPLATE_KEYS, false)
+      mentionTemplate: normalizeSlackTemplate_(
+        migrateLegacySlackMentionTemplate_(parsed.mentionTemplate, parsed.mentionTemplateVersion),
+        SLACK_DEFAULT_MENTION_TEMPLATE,
+        SLACK_MENTION_TEMPLATE_KEYS,
+        false
+      )
     };
   } catch (error) {
     return {
@@ -226,6 +247,12 @@ function slackNotificationSettings_() {
       mentionTemplate: SLACK_DEFAULT_MENTION_TEMPLATE
     };
   }
+}
+
+function migrateLegacySlackMentionTemplate_(value, version) {
+  const template = cleanString_(value);
+  if (Number(version) >= 2 || template.indexOf('{mentionedUsers}') !== -1) return template;
+  return template.replace(/\{mentionedNames\}/g, '{mentionedUsers}');
 }
 
 function publicSlackSettings_() {
@@ -241,6 +268,7 @@ function publicSlackSettings_() {
   return {
     configured: !!webhookUrl,
     maskedWebhookUrl: webhookUrl ? webhookUrl.slice(0, 34) + '••••••' : '',
+    webhookType: slackWebhookType_(webhookUrl),
     statusChangeEnabled: settings.statusChangeEnabled,
     mentionEnabled: settings.mentionEnabled,
     statusTemplate: settings.statusTemplate,
@@ -250,6 +278,20 @@ function publicSlackSettings_() {
     lastError: cleanString_(delivery.lastError),
     lastResponseCode: Number(delivery.lastResponseCode) || 0
   };
+}
+
+function slackWebhookType_(value) {
+  const webhookUrl = cleanString_(value);
+  if (/^https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9_\/-]+$/.test(webhookUrl)) return 'incoming';
+  if (/^https:\/\/hooks\.slack\.com\/triggers\/[A-Za-z0-9_\/-]+$/.test(webhookUrl)) return 'workflow';
+  return '';
+}
+
+function slackRequestPayload_(webhookUrl, payload) {
+  if (slackWebhookType_(webhookUrl) === 'workflow') {
+    return { text: cleanString_(payload && payload.text) };
+  }
+  return payload || {};
 }
 
 function attachPublicSlackSettings_(payload) {
@@ -335,6 +377,9 @@ if (typeof module !== 'undefined' && module.exports) {
     SLACK_STATUS_TEMPLATE_KEYS: SLACK_STATUS_TEMPLATE_KEYS,
     SLACK_MENTION_TEMPLATE_KEYS: SLACK_MENTION_TEMPLATE_KEYS,
     buildMentionNotification_: buildMentionNotification_,
+    slackMentionedUsers_: slackMentionedUsers_,
+    slackWebhookType_: slackWebhookType_,
+    slackRequestPayload_: slackRequestPayload_,
     normalizeSlackTemplate_: normalizeSlackTemplate_,
     renderSlackTemplate_: renderSlackTemplate_,
     saveSlackSettings: saveSlackSettings,
