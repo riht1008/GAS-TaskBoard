@@ -15,7 +15,13 @@
       const showSaveFooter = Boolean(state.shellNodeId && state.shellNodeId === node.id) || hasUnsavedDetailDraft();
       const descriptionPreview = draft.description
         ? `<div class="markdown-body">${renderMarkdown(draft.description, [])}</div>`
-        : '<span class="detail-description-empty">目的、背景、完了条件などの説明を追加</span>';
+        : state.currentMember
+          ? '<button class="detail-description-empty" type="button" data-action="edit-detail-description">目的、背景、完了条件などの説明を追加</button>'
+          : '<span class="detail-description-empty">説明はまだありません</span>';
+      const descriptionAuthor = node.updatedBy ? state.memberById.get(node.updatedBy) : null;
+      const descriptionMeta = descriptionAuthor
+        ? `${descriptionAuthor.name} が更新 · ${formatDateTime(node.updatedAt)}`
+        : node.updatedAt ? `更新 ${formatDateTime(node.updatedAt)}` : '';
       return `
         <div class="overlay" data-action="close-drawer"></div>
         <div class="drawer-shell">
@@ -30,27 +36,30 @@
                   <textarea class="textarea task-name-textarea detail-name-textarea" rows="1" aria-label="タスク名" data-detail-name-input data-draft-scope="detail" data-draft-field="name" ${state.currentMember ? '' : 'readonly'}>${h(draft.name)}</textarea>
                 </section>
                 <section class="detail-content-section detail-description-section">
-                  <div class="detail-content-card">
-                    <div class="detail-content-card-head">
-                      <div class="section-title">説明</div>
-                      ${!state.detailDescriptionEditing && state.currentMember ? `<button class="button ghost compact" type="button" data-action="edit-detail-description">${icon('edit')}編集</button>` : ''}
-                    </div>
-                    <div class="detail-content-card-body">
-                      ${state.detailDescriptionEditing ? `
-                        <div class="detail-description-editor">
-                          <textarea class="textarea detail-description-textarea" data-detail-description-input data-draft-scope="detail" data-draft-field="description" placeholder="目的、背景、完了条件などを記載">${h(draft.description)}</textarea>
-                          <div class="detail-description-actions">
-                            <span class="field-hint">Escでも閲覧表示へ戻れます</span>
-                            <button class="button secondary compact" type="button" data-action="finish-detail-description">編集を終了</button>
+                  <article class="comment detail-description-block">
+                    ${renderAvatar(descriptionAuthor || { name: '?', email: '', color: 'var(--color-text-tertiary)' })}
+                    <div class="comment-box">
+                      <div class="comment-head">
+                        <div class="comment-author"><strong>説明</strong>${descriptionMeta ? `<span class="comment-head-meta">${h(descriptionMeta)}</span>` : ''}</div>
+                        ${!state.detailDescriptionEditing && state.currentMember ? `<button class="button ghost compact" type="button" data-action="edit-detail-description">${icon('edit')}編集</button>` : ''}
+                      </div>
+                      <div class="comment-text">
+                        ${state.detailDescriptionEditing ? `
+                          <div class="detail-description-editor">
+                            <textarea class="textarea detail-description-textarea" data-detail-description-input data-draft-scope="detail" data-draft-field="description" placeholder="目的、背景、完了条件などを記載">${h(draft.description)}</textarea>
+                            <div class="detail-description-actions">
+                              <span class="field-hint">Escでも閲覧表示へ戻れます</span>
+                              <button class="button secondary compact" type="button" data-action="finish-detail-description">編集を終了</button>
+                            </div>
                           </div>
-                        </div>
-                      ` : `
-                        <div class="detail-description-preview">
-                          ${descriptionPreview}
-                        </div>
-                      `}
+                        ` : `
+                          <div class="detail-description-preview">
+                            ${descriptionPreview}
+                          </div>
+                        `}
+                      </div>
                     </div>
-                  </div>
+                  </article>
                 </section>
                 <section class="detail-content-section detail-comments-section">
                   <div class="detail-section-heading">
@@ -68,11 +77,11 @@
               <aside class="detail-sidebar" aria-label="タスクのプロパティ">
                 <section class="drawer-section detail-property-section">
                   <div class="section-title">プロパティ</div>
-                  ${renderDetailPropertyRow('ステータス', renderDropdown({ scope: 'detail', field: 'statusColumnId', selected: draft.statusColumnId, disabled: !state.currentMember, plain: true, ariaLabel: 'ステータス', options: state.statusColumns.map(column => ({ value: column.id, label: column.name, color: column.color || defaultStatusColor(column) })) }))}
-                  ${renderDetailPropertyRow('担当者', renderDropdown({ scope: 'detail', field: 'assigneeIds', selected: draft.assigneeIds, disabled: !state.currentMember, multi: true, plain: true, ariaLabel: '担当者', placeholder: '未割当', options: state.members.map(member => ({ value: member.id, label: member.name, avatar: member })) }))}
+                  ${renderDetailPropertyRow('ステータス', renderDropdown({ scope: 'detail', field: 'statusColumnId', selected: draft.statusColumnId, disabled: !state.currentMember, plain: true, triggerHtml: renderStatusChip(draft.statusColumnId), ariaLabel: 'ステータス', options: state.statusColumns.map(column => ({ value: column.id, label: column.name, color: column.color || defaultStatusColor(column) })) }))}
+                  ${renderDetailPropertyRow('担当者', renderDropdown({ scope: 'detail', field: 'assigneeIds', selected: draft.assigneeIds, disabled: !state.currentMember, multi: true, plain: true, triggerHtml: renderDetailAssignees(draft.assigneeIds), ariaLabel: '担当者', placeholder: '未割当', options: state.members.map(member => ({ value: member.id, label: member.name, avatar: member })) }))}
                   ${renderDetailPropertyRow('優先度', renderDropdown({ scope: 'detail', field: 'priority', selected: draft.priority, disabled: !state.currentMember, plain: true, ariaLabel: '優先度', options: priorityOptions() }))}
                   ${renderDetailPropertyRow('進捗', node.hasChildren
-                    ? `<div class="detail-property-value">${Math.round(node.progress)}%</div>`
+                    ? `<div class="detail-property-value"><span class="progress-pill" style="--progress-color:${h(progressColor(Math.round(node.progress)) || 'var(--color-border)')}">${Math.round(node.progress)}%</span></div>`
                     : `${renderDropdown({ scope: 'detail', field: 'progress', selected: String(progressValue), disabled: !state.currentMember || draft.statusColumnId === doneColumnId, plain: true, ariaLabel: '進捗', options: progressOptions() })}${draft.statusColumnId === doneColumnId ? '<span class="field-hint">ステータスで管理</span>' : ''}`)}
                 </section>
                 <section class="drawer-section detail-property-section">
@@ -131,6 +140,12 @@
           <div class="detail-property-control">${content}</div>
         </div>
       `;
+    }
+
+    function renderDetailAssignees(assigneeIds) {
+      const members = (assigneeIds || []).map(id => state.memberById.get(id)).filter(Boolean);
+      if (!members.length) return '';
+      return `${renderAvatars(assigneeIds)}<span class="detail-assignee-names">${h(members.map(member => member.name).join('、'))}</span>`;
     }
 
     function renderDependencyPanel(node) {
@@ -224,13 +239,16 @@
       const member = state.memberById.get(comment.authorId);
       return `
         <article class="comment ${isReply ? 'reply' : ''} ${selfMentioned ? 'mentioned-self' : ''}">
-          <div class="comment-head">
-            <div class="comment-author">${renderAvatar(member || { name: comment.authorName || '退職者', email: '', color: 'var(--color-text-tertiary)' })}<strong>${h(comment.authorName || '不明')}</strong></div>
-            <span class="mono">${h(formatDateTime(comment.timestamp))}</span>
-          </div>
-          <div class="comment-text markdown-body">${renderMarkdown(comment.text, mentions)}</div>
-          <div class="comment-actions">
-            <button class="button ghost compact" type="button" data-action="reply-comment" data-comment-id="${h(threadParentId || comment.id)}" data-comment-author="${h(comment.authorName || 'このコメント')}" ${state.currentMember ? '' : 'disabled'}>返信</button>
+          ${renderAvatar(member || { name: comment.authorName || '退職者', email: '', color: 'var(--color-text-tertiary)' })}
+          <div class="comment-box">
+            <div class="comment-head">
+              <div class="comment-author"><strong>${h(comment.authorName || '不明')}</strong></div>
+              <span class="mono">${h(formatDateTime(comment.timestamp))}</span>
+            </div>
+            <div class="comment-text markdown-body">${renderMarkdown(comment.text, mentions)}</div>
+            <div class="comment-actions">
+              <button class="button ghost compact" type="button" data-action="reply-comment" data-comment-id="${h(threadParentId || comment.id)}" data-comment-author="${h(comment.authorName || 'このコメント')}" ${state.currentMember ? '' : 'disabled'}>返信</button>
+            </div>
           </div>
         </article>
       `;
@@ -242,15 +260,19 @@
       const mention = state.commentMention && state.commentMention.nodeId === nodeId ? state.commentMention : null;
       return `
         <div class="comment-composer comment-timeline-entry">
-          ${reply ? `
-            <div class="reply-mode">
-              <span>${h(reply.authorName)}さんのコメントに返信</span>
-              <button class="button ghost compact" type="button" data-action="cancel-comment-reply">キャンセル</button>
-            </div>
-          ` : ''}
-          <textarea class="textarea" id="commentText" data-comment-text="${h(nodeId)}" placeholder="コメント" aria-label="コメントを追加" ${state.currentMember ? '' : 'disabled'}>${h(draft)}</textarea>
-          ${mention && mention.active ? renderMentionMenu(mention) : ''}
-          <button class="button primary comment-submit" data-action="post-comment" ${state.currentMember ? '' : 'disabled'}>コメントを保存</button>
+          ${state.currentMember ? renderAvatar(state.currentMember) : '<span class="avatar" style="background:var(--color-text-tertiary)">?</span>'}
+          <div class="comment-composer-main">
+            ${reply ? `
+              <div class="reply-mode">
+                <span>${h(reply.authorName)}さんのコメントに返信</span>
+                <button class="button ghost compact" type="button" data-action="cancel-comment-reply">キャンセル</button>
+              </div>
+            ` : ''}
+            ${state.currentMember ? `<div class="comment-composer-identity"><strong>${h(state.currentMember.name)}</strong> としてコメント</div>` : ''}
+            <textarea class="textarea" id="commentText" data-comment-text="${h(nodeId)}" placeholder="コメント" aria-label="コメントを追加" ${state.currentMember ? '' : 'disabled'}>${h(draft)}</textarea>
+            ${mention && mention.active ? renderMentionMenu(mention) : ''}
+            <button class="button primary comment-submit" data-action="post-comment" ${state.currentMember ? '' : 'disabled'}>コメントを保存</button>
+          </div>
         </div>
       `;
     }

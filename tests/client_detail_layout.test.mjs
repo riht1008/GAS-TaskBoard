@@ -32,8 +32,24 @@ test('description and comment composer receive the primary editing space', () =>
   assert.match(panels, /detail-description-textarea/);
   assert.match(panels, /detail-comments-section/);
   assert.match(styles, /\.detail-description-textarea \{[\s\S]*min-height: calc\(var\(--space-12\) \* 3\)/);
-  assert.match(panels, /detail-content-card/);
+  assert.match(panels, /detail-description-preview/);
   assert.match(styles, /\.detail-comments-section \.comment-composer \.textarea \{[\s\S]*min-height: calc\(var\(--space-12\) \* 3\)/);
+});
+
+test('property rail stays unboxed while description and comments use speech blocks', () => {
+  assert.doesNotMatch(panels, /detail-content-card/);
+  assert.match(panels, /detail-description-block/);
+  assert.match(panels, /class="comment-box"/);
+  assert.match(panels, /が更新/);
+  assert.match(panels, /comment-composer-identity/);
+  assert.match(styles, /\.comment-box::before/);
+  assert.match(styles, /\.comment-head \{[\s\S]{0,300}background: var\(--color-canvas\)/);
+  assert.match(styles, /\.detail-sidebar \{[\s\S]{0,200}background: var\(--color-surface\)/);
+  assert.doesNotMatch(styles, /\.detail-property-row \{[\s\S]{0,300}border-bottom/);
+  assert.match(panels, /triggerHtml: renderStatusChip\(draft\.statusColumnId\)/);
+  assert.match(panels, /function renderDetailAssignees/);
+  assert.match(utils, /color-mix\(in srgb, var\(--color-accent\)/);
+  assert.doesNotMatch(utils, /#e67c73/);
 });
 
 test('detail drawer uses one task title and compact property rows', () => {

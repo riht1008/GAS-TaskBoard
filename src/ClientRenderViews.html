@@ -608,7 +608,7 @@
       const showAdd = canCreateChild(node);
       const inlineScope = `inline:${node.id}`;
       const progressValue = inlineProgressValue(node);
-      const progressTone = progressColor(progressValue) || '#DDE3DF';
+      const progressTone = progressColor(progressValue) || 'var(--color-border)';
       return `
         <tr class="${state.shellNodeId === node.id ? 'shell-node-row' : ''}" data-tree-node="${h(node.id)}">
           <td>

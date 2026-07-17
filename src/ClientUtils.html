@@ -263,16 +263,12 @@
     }
 
     function progressColor(value) {
-      const colors = {
-        0: '#e67c73',
-        15: '#e98f82',
-        30: '#eda392',
-        45: '#f1b6a3',
-        60: '#f5cab3',
-        75: '#f8dec3',
-        90: '#fcf1d1'
-      };
-      return colors[Number(value)] || '';
+      if (value === null || value === undefined || value === '') return '';
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) return '';
+      const progress = Math.max(0, Math.min(100, numeric));
+      if (progress === 0) return 'var(--color-border)';
+      return `color-mix(in srgb, var(--color-accent) ${Math.round(progress * 0.55)}%, var(--color-border))`;
     }
 
     function normalizeProgressValue(value) {
