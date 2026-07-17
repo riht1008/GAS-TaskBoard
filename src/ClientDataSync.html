@@ -351,7 +351,7 @@
         render();
       } catch (error) {
         state.syncStatus = 'error';
-        if (!silent || force) showToast(error.message, 'error');
+        if (!silent || force) showToast(error.message, 'error', { sticky: true });
         render();
       }
     }

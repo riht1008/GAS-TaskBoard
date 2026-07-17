@@ -293,6 +293,10 @@
       overflow: hidden;
     }
 
+    .shell.shell-unregistered {
+      grid-template-rows: var(--topbar-height) auto auto 1fr;
+    }
+
     .topbar {
       display: flex;
       align-items: center;
@@ -382,7 +386,8 @@
 
     .sync-pill.sync-pending,
     .sync-pill.sync-local {
-      color: var(--color-warning);
+      border-color: var(--color-warning);
+      color: var(--color-text-primary);
       background: var(--color-warning-subtle);
     }
 
@@ -393,7 +398,7 @@
     .banner {
       width: 100%;
       padding: var(--space-2) var(--space-6);
-      color: var(--color-warning);
+      color: var(--color-text-primary);
       background: var(--color-warning-subtle);
       border-bottom: 1px solid var(--color-border);
       font-size: var(--text-sm);
@@ -606,6 +611,29 @@
       grid-template-rows: 1fr;
     }
 
+    .kanban-view.has-filtered-empty,
+    .gantt-view.has-filtered-empty {
+      grid-template-rows: auto 1fr;
+    }
+
+    .gantt-view.has-filtered-empty {
+      grid-template-rows: auto auto 1fr;
+    }
+
+    .filtered-empty-notice {
+      min-height: var(--bar-control-height);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-3);
+      padding: var(--space-2) var(--space-3);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-lg);
+      color: var(--color-text-secondary);
+      background: var(--color-surface);
+      font-size: var(--text-sm);
+    }
+
     .board-layout {
       min-height: 0;
       display: grid;
@@ -763,6 +791,10 @@
       inset: 0;
       z-index: 35;
       pointer-events: none;
+    }
+
+    .dropdown-portal-root.overlay-portal-active {
+      z-index: 60;
     }
 
     .dropdown-menu.dropdown-menu-portal {
@@ -1023,7 +1055,7 @@
 
     .settings-tabs {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: var(--space-1);
       padding: var(--space-1);
       margin-bottom: var(--space-4);
@@ -1283,10 +1315,14 @@
     }
 
     .task-card-title {
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 3;
       padding-left: var(--space-6);
       font-weight: var(--weight-medium);
       line-height: 1.45;
       word-break: break-word;
+      overflow: hidden;
     }
 
     .card-drag-handle {
@@ -1317,7 +1353,7 @@
       display: inline-flex;
       align-items: center;
       border-radius: var(--radius-pill);
-      color: var(--color-text-tertiary);
+      color: var(--color-text-secondary);
       font-family: var(--font-mono);
       font-size: var(--text-xs);
       padding: 0 var(--space-2);
@@ -1459,7 +1495,11 @@
     .inline-cell-input:focus {
       border-color: var(--color-border);
       background: var(--color-surface);
-      outline: none;
+    }
+
+    .inline-cell-input:focus-visible {
+      outline: 2px solid var(--color-focus-ring);
+      outline-offset: 1px;
     }
 
     .inline-cell-input.placeholder::placeholder {
@@ -1677,9 +1717,9 @@
       position: absolute;
       top: 0;
       bottom: 0;
-      left: calc(var(--gantt-tree-width) - 5px);
+      left: calc(var(--gantt-tree-width) - var(--space-2));
       z-index: 12;
-      width: 10px;
+      width: var(--space-4);
       border: 0;
       background: transparent;
       cursor: col-resize;
@@ -1691,7 +1731,7 @@
       position: absolute;
       top: 0;
       bottom: 0;
-      left: 4px;
+      left: calc(50% - 1px);
       width: 2px;
       background: transparent;
       transition: background var(--duration-fast) var(--ease-standard);
@@ -1896,9 +1936,9 @@
       left: var(--space-3);
       top: 50%;
       transform: translateY(-50%);
-      color: var(--color-text-tertiary);
+      color: var(--color-text-secondary);
       font-size: var(--text-xs);
-      opacity: 0;
+      opacity: 0.68;
       pointer-events: none;
       transition: opacity var(--duration-fast) var(--ease-standard);
     }
@@ -2103,10 +2143,9 @@
     .today-column {
       position: absolute;
       top: 0;
+      width: 1px;
       pointer-events: none;
-      border-left: 1px solid color-mix(in srgb, var(--color-warning) 64%, transparent);
-      border-right: 1px solid color-mix(in srgb, var(--color-warning) 28%, transparent);
-      background: color-mix(in srgb, var(--color-warning) 14%, transparent);
+      background: var(--color-danger);
       z-index: 2;
     }
 
@@ -2142,7 +2181,9 @@
     .gantt-progress {
       position: absolute;
       inset: 0 auto 0 0;
-      display: none;
+      border-radius: inherit;
+      background: color-mix(in srgb, var(--gantt-status-color, var(--color-accent)) 42%, transparent);
+      pointer-events: none;
     }
 
     .gantt-label {
@@ -2165,7 +2206,7 @@
       top: 0;
       bottom: 0;
       z-index: 2;
-      width: var(--space-2);
+      width: var(--space-3);
     }
 
     .bar-handle.left {

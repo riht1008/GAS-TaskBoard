@@ -25,6 +25,7 @@
       kanbanMemberRailCollapsed: true,
       collapsed: new Set(),
       drawerNodeId: '',
+      drawerReturnFocus: null,
       detailDraftNodeId: '',
       detailDraft: null,
       shellNodeId: '',
@@ -128,7 +129,7 @@
     }
     window.addEventListener('load', startAppOnce, { once: true });
     window.addEventListener('beforeunload', event => {
-      if (!hasPendingMutations()) return;
+      if (!hasPendingMutations() && !hasUnsavedDetailDraft()) return;
       event.preventDefault();
       event.returnValue = '';
     });

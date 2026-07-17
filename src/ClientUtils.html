@@ -727,7 +727,7 @@
     }
 
     function canCreateChild(node) {
-      return !!node && !node.isDraft && !nodeHasDependency(node.id);
+      return Boolean(state.currentMember) && !!node && !node.isDraft && !nodeHasDependency(node.id);
     }
 
     function hasWbsExcludedAncestor(nodeId) {
@@ -898,12 +898,12 @@
 
     function renderToasts() {
       toastRoot.innerHTML = state.toasts.map(toast => `
-        <div class="toast" style="--toast-color:${toastColor(toast.type)}">
+        <div class="toast" role="${toast.type === 'error' ? 'alert' : 'status'}" style="--toast-color:${toastColor(toast.type)}">
           <div class="toast-bar"></div>
           <div class="toast-message">${h(toast.message)}</div>
           <div class="toast-actions">
             ${toast.actionLabel ? `<button class="button secondary compact" data-toast-action="${h(toast.id)}">${h(toast.actionLabel)}</button>` : ''}
-            <button class="button ghost icon compact" data-toast-dismiss="${h(toast.id)}">${icon('x')}</button>
+            <button class="button ghost icon compact" data-toast-dismiss="${h(toast.id)}" aria-label="通知を閉じる">${icon('x')}</button>
           </div>
         </div>
       `).join('');

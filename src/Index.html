@@ -1,9 +1,10 @@
 <!doctype html>
-<html>
+<html lang="ja">
 <head>
   <base target="_top">
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>タスク管理</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
@@ -15,7 +16,7 @@
   <div id="dropdownPortalRoot" class="dropdown-portal-root"></div>
   <div id="drawerRoot"></div>
   <div id="dialogRoot"></div>
-  <div id="toastRoot" class="toast-stack" aria-live="polite"></div>
+  <div id="toastRoot" class="toast-stack" aria-live="polite" aria-atomic="false"></div>
 
   <script>
 window.__TASKBOARD_BOOTSTRAP_EMAIL__ = <?!= JSON.stringify(bootstrapEmail || '') ?>;

@@ -15,59 +15,59 @@
         <div class="drawer-shell">
           <aside class="drawer" role="dialog" aria-modal="true">
             <header class="drawer-head">
-              <button class="button ghost icon" data-action="close-drawer" title="閉じる">${icon('x')}</button>
+              <button class="button ghost icon" data-action="close-drawer" title="閉じる" aria-label="詳細を閉じる">${icon('x')}</button>
               <div class="drawer-title">${h(node.name || '新しいタスク')}</div>
             </header>
             <div class="drawer-body">
               <section class="drawer-section">
                 <div class="field wide">
                   <span class="field-label">名称</span>
-                  <textarea class="textarea task-name-textarea" rows="2" data-detail-name-input data-draft-scope="detail" data-draft-field="name">${h(draft.name)}</textarea>
+                  <textarea class="textarea task-name-textarea" rows="2" data-detail-name-input data-draft-scope="detail" data-draft-field="name" ${state.currentMember ? '' : 'readonly'}>${h(draft.name)}</textarea>
                 </div>
                 <div class="field-grid">
                   <label class="field">
                     <span class="field-label">ステータス</span>
-                    ${renderDropdown({ scope: 'detail', field: 'statusColumnId', selected: draft.statusColumnId, options: state.statusColumns.map(column => ({ value: column.id, label: column.name, color: column.color || defaultStatusColor(column) })) })}
+                    ${renderDropdown({ scope: 'detail', field: 'statusColumnId', selected: draft.statusColumnId, disabled: !state.currentMember, options: state.statusColumns.map(column => ({ value: column.id, label: column.name, color: column.color || defaultStatusColor(column) })) })}
                   </label>
                   <label class="field">
                     <span class="field-label">優先度</span>
-                    ${renderDropdown({ scope: 'detail', field: 'priority', selected: draft.priority, options: priorityOptions() })}
+                    ${renderDropdown({ scope: 'detail', field: 'priority', selected: draft.priority, disabled: !state.currentMember, options: priorityOptions() })}
                   </label>
                   <label class="field">
                     <span class="field-label">開始日</span>
-                    ${renderDatePicker({ scope: 'detail', field: 'startDate', selected: draft.startDate, endDate: draft.endDate, placeholder: '未設定' })}
+                    ${renderDatePicker({ scope: 'detail', field: 'startDate', selected: draft.startDate, disabled: !state.currentMember, endDate: draft.endDate, placeholder: '未設定' })}
                   </label>
                   <label class="field">
                     <span class="field-label">終了日</span>
-                    ${renderDatePicker({ scope: 'detail', field: 'endDate', selected: draft.endDate, startDate: draft.startDate, minDate: draft.startDate, placeholder: '未設定' })}
+                    ${renderDatePicker({ scope: 'detail', field: 'endDate', selected: draft.endDate, disabled: !state.currentMember, startDate: draft.startDate, minDate: draft.startDate, placeholder: '未設定' })}
                   </label>
                   <label class="field">
                     <span class="field-label">進捗</span>
                     ${node.hasChildren
                       ? `<div class="readonly-field">${Math.round(node.progress)}%</div>`
-                      : renderDropdown({ scope: 'detail', field: 'progress', selected: String(progressValue), disabled: draft.statusColumnId === doneColumnId, options: progressOptions() })}
+                      : renderDropdown({ scope: 'detail', field: 'progress', selected: String(progressValue), disabled: !state.currentMember || draft.statusColumnId === doneColumnId, options: progressOptions() })}
                     ${!node.hasChildren && draft.statusColumnId === doneColumnId ? '<span class="field-hint">ステータスで管理</span>' : ''}
                   </label>
                   <label class="field">
                     <span class="field-label">WBS</span>
-                    <span class="switch wbs-switch"><input type="checkbox" data-draft-scope="detail" data-draft-field="includeInWbs" ${checked(draft.includeInWbs !== false)} ${ancestorExcluded ? 'disabled' : ''}> 反映</span>
+                    <span class="switch wbs-switch"><input type="checkbox" data-draft-scope="detail" data-draft-field="includeInWbs" ${checked(draft.includeInWbs !== false)} ${ancestorExcluded || !state.currentMember ? 'disabled' : ''}> 反映</span>
                     ${ancestorExcluded ? '<span class="field-hint">親タスクがWBS対象外</span>' : ''}
                   </label>
                   <label class="field wide">
                     <span class="field-label">担当者</span>
-                    ${renderDropdown({ scope: 'detail', field: 'assigneeIds', selected: draft.assigneeIds, multi: true, placeholder: '未割当', options: state.members.map(member => ({ value: member.id, label: member.name, avatar: member })) })}
+                    ${renderDropdown({ scope: 'detail', field: 'assigneeIds', selected: draft.assigneeIds, disabled: !state.currentMember, multi: true, placeholder: '未割当', options: state.members.map(member => ({ value: member.id, label: member.name, avatar: member })) })}
                   </label>
                   <label class="field wide">
                     <span class="field-label">成果物</span>
-                    <input class="input" data-draft-scope="detail" data-draft-field="deliverable" value="${h(draft.deliverable)}">
+                    <input class="input" data-draft-scope="detail" data-draft-field="deliverable" value="${h(draft.deliverable)}" ${state.currentMember ? '' : 'readonly'}>
                   </label>
                   <label class="field wide">
                     <span class="field-label">備考</span>
-                    <input class="input" data-draft-scope="detail" data-draft-field="note" value="${h(draft.note)}">
+                    <input class="input" data-draft-scope="detail" data-draft-field="note" value="${h(draft.note)}" ${state.currentMember ? '' : 'readonly'}>
                   </label>
                   <label class="field wide">
                     <span class="field-label">説明</span>
-                    <textarea class="textarea" data-draft-scope="detail" data-draft-field="description">${h(draft.description)}</textarea>
+                    <textarea class="textarea" data-draft-scope="detail" data-draft-field="description" ${state.currentMember ? '' : 'readonly'}>${h(draft.description)}</textarea>
                   </label>
                 </div>
               </section>
@@ -81,8 +81,8 @@
                 <div class="inline-actions">
                   ${parent ? `<button class="button secondary compact" data-open-node="${h(parent.id)}">親: ${h(parent.name)}</button>` : ''}
                   ${canCreateChild(node) ? `<button class="button secondary compact" data-action="create-child-shell" data-parent-id="${h(node.id)}">子を追加</button>` : ''}
-                  ${node.hasChildren ? `<button class="button secondary compact" data-action="fit-children" data-node-id="${h(node.id)}">子に合わせる</button>` : ''}
-                  ${node.id !== state.rootId ? `<button class="button destructive compact" data-action="confirm-node-delete" data-node-id="${h(node.id)}">タスクを削除</button>` : ''}
+                  ${node.hasChildren ? `<button class="button secondary compact" data-action="fit-children" data-node-id="${h(node.id)}" ${state.currentMember ? '' : 'disabled'}>子に合わせる</button>` : ''}
+                  ${node.id !== state.rootId ? `<button class="button destructive compact" data-action="confirm-node-delete" data-node-id="${h(node.id)}" ${state.currentMember ? '' : 'disabled'}>タスクを削除</button>` : ''}
                 </div>
                 ${childNodes.length ? `<div class="related-list">${childNodes.map(child => `<div class="related-row"><button class="button ghost" data-open-node="${h(child.id)}">${h(child.name || '新しいタスク')}</button></div>`).join('')}</div>` : ''}
               </section>
@@ -113,25 +113,47 @@
     function renderDependencyPanel(node) {
       const scheduledLeaves = state.nodes.filter(candidate => candidate.id !== node.id && candidate.isLeaf && candidate.startDate && candidate.endDate);
       const disabled = !state.currentMember || !node.isLeaf || !node.startDate || !node.endDate;
+      const disabledReason = !state.currentMember
+        ? 'メンバー登録後に編集できます'
+        : !node.isLeaf
+          ? '依存関係は末端タスクにのみ設定できます'
+          : !node.startDate || !node.endDate
+            ? '開始日と終了日を設定すると追加できます'
+            : '';
       const incoming = state.dependencies.filter(dep => dep.successorId === node.id);
       const outgoing = state.dependencies.filter(dep => dep.predecessorId === node.id);
       return `
         <div class="field-grid">
           <label class="field wide">
             <span class="field-label">先行タスクを追加</span>
-            ${renderDropdown({ scope: 'dependency', field: 'predecessorId', selected: dependencyDraft().predecessorId, disabled, placeholder: 'タスクを選択', options: [{ value: '', label: 'タスクを選択' }].concat(scheduledLeaves.map(candidate => ({ value: candidate.id, label: candidate.name }))) })}
+            ${renderDropdown({ scope: 'dependency', field: 'predecessorId', selected: dependencyDraft().predecessorId, disabled, placeholder: 'タスクを選択', options: [{ value: '', label: 'タスクを選択' }].concat(scheduledLeaves.map(candidate => ({ value: candidate.id, label: dependencyOptionLabel(candidate) }))) })}
           </label>
           <button class="button secondary" data-action="add-predecessor" ${disabled ? 'disabled' : ''}>追加</button>
           <label class="field wide">
             <span class="field-label">後続タスクを追加</span>
-            ${renderDropdown({ scope: 'dependency', field: 'successorId', selected: dependencyDraft().successorId, disabled, placeholder: 'タスクを選択', options: [{ value: '', label: 'タスクを選択' }].concat(scheduledLeaves.map(candidate => ({ value: candidate.id, label: candidate.name }))) })}
+            ${renderDropdown({ scope: 'dependency', field: 'successorId', selected: dependencyDraft().successorId, disabled, placeholder: 'タスクを選択', options: [{ value: '', label: 'タスクを選択' }].concat(scheduledLeaves.map(candidate => ({ value: candidate.id, label: dependencyOptionLabel(candidate) }))) })}
           </label>
           <button class="button secondary" data-action="add-successor" ${disabled ? 'disabled' : ''}>追加</button>
+          ${disabledReason ? `<div class="field-hint wide">${h(disabledReason)}</div>` : ''}
         </div>
         <div class="dependency-list">
           ${incoming.concat(outgoing).map(dep => renderDependencyRow(dep, node.id)).join('') || '<div class="meta-line">なし</div>'}
         </div>
       `;
+    }
+
+    function dependencyOptionLabel(node) {
+      const path = ancestorChain(node.id)
+        .slice()
+        .reverse()
+        .filter(id => id !== state.rootId)
+        .map(id => state.nodesById.get(id))
+        .filter(Boolean)
+        .map(ancestor => ancestor.name)
+        .filter(Boolean);
+      path.push(node.name || '新しいタスク');
+      const range = formatShortRange(node.startDate, node.endDate);
+      return `${path.join(' / ')}${range ? ` · ${range}` : ''}`;
     }
 
     function renderDependencyRow(dep, currentId) {
@@ -143,7 +165,7 @@
             <div class="dependency-flow"><span>${h(pred ? pred.name : dep.predecessorId)}</span>${icon('arrow-right')}<span>${h(succ ? succ.name : dep.successorId)}</span></div>
             <div class="meta-line">${dep.successorId === currentId ? '先行' : '後続'}</div>
           </div>
-          <button class="button destructive compact" data-action="confirm-dependency-delete" data-dependency-id="${h(dep.id)}">削除</button>
+          <button class="button destructive compact" data-action="confirm-dependency-delete" data-dependency-id="${h(dep.id)}" ${state.currentMember ? '' : 'disabled'}>削除</button>
         </div>
       `;
     }
@@ -185,7 +207,7 @@
           </div>
           <div class="comment-text markdown-body">${renderMarkdown(comment.text, mentions)}</div>
           <div class="comment-actions">
-            <button class="button ghost compact" type="button" data-action="reply-comment" data-comment-id="${h(threadParentId || comment.id)}" data-comment-author="${h(comment.authorName || 'このコメント')}">返信</button>
+            <button class="button ghost compact" type="button" data-action="reply-comment" data-comment-id="${h(threadParentId || comment.id)}" data-comment-author="${h(comment.authorName || 'このコメント')}" ${state.currentMember ? '' : 'disabled'}>返信</button>
           </div>
         </article>
       `;
@@ -270,7 +292,9 @@
       });
       if (dialog.type === 'confirmMemberDelete') return renderConfirmDialog({
         title: 'メンバーを削除',
-        body: dialog.confirmSelf ? `${dialog.name} を削除します。自分自身のメンバー情報です` : `${dialog.name} を削除します。担当中のタスクからも外れます`,
+        body: dialog.confirmSelf
+          ? `${dialog.name} を削除します。自分自身のメンバー情報です。担当タスク ${Number(dialog.assignedCount) || 0}件からも外れます`
+          : `${dialog.name} を削除します。担当タスク ${Number(dialog.assignedCount) || 0}件からも外れます`,
         action: 'delete-member',
         actionLabel: 'メンバーを削除',
         destructive: true
@@ -303,6 +327,14 @@
         actionLabel: '上書き',
         destructive: false
       });
+      if (dialog.type === 'confirmSlackDisconnect') return renderConfirmDialog({
+        title: 'Slack連携を解除',
+        body: '保存済みのWebhook設定を削除し、ステータス変更通知を停止します',
+        action: 'disconnect-slack-confirmed',
+        actionLabel: '連携を解除',
+        destructive: true
+      });
+      if (dialog.type === 'confirmDetailClose') return renderDetailCloseDialog(dialog);
       if (dialog.type === 'join') return renderJoinDialog(dialog);
       if (dialog.type === 'members') return renderMembersDialog();
       if (dialog.type === 'projectSettings') return renderProjectSettingsDialog();
@@ -318,7 +350,7 @@
           <form class="modal" id="joinForm">
             <header class="modal-head">
               <div class="modal-title">参加</div>
-              <button class="button ghost icon" type="button" data-action="close-dialog">${icon('x')}</button>
+              <button class="button ghost icon" type="button" data-action="close-dialog" aria-label="参加画面を閉じる">${icon('x')}</button>
             </header>
             <div class="modal-body">
               <div class="drawer-section compact-section">
@@ -350,7 +382,7 @@
         <div class="drawer-shell">
           <form class="drawer" id="nodeDialogForm">
             <header class="drawer-head">
-              <button class="button ghost icon" type="button" data-action="close-dialog" title="閉じる">${icon('x')}</button>
+              <button class="button ghost icon" type="button" data-action="close-dialog" title="閉じる" aria-label="タスク作成画面を閉じる">${icon('x')}</button>
               <div class="modal-title">タスクを追加</div>
             </header>
             <div class="drawer-body">
@@ -408,7 +440,7 @@
           <form class="modal" id="statusDialogForm">
             <header class="modal-head">
               <div class="modal-title">${draft.columnId ? '列を編集' : '列を追加'}</div>
-              <button class="button ghost icon" type="button" data-action="close-dialog">${icon('x')}</button>
+              <button class="button ghost icon" type="button" data-action="close-dialog" aria-label="ステータス設定を閉じる">${icon('x')}</button>
             </header>
             <div class="modal-body">
               <label class="field">
@@ -440,7 +472,7 @@
           <section class="modal">
             <header class="modal-head">
               <div class="modal-title">${h(config.title)}</div>
-              <button class="button ghost icon" type="button" data-action="close-dialog">${icon('x')}</button>
+              <button class="button ghost icon" type="button" data-action="close-dialog" aria-label="確認画面を閉じる">${icon('x')}</button>
             </header>
             <div class="modal-body">
               <div class="${config.destructive ? 'danger-note' : 'meta-line'}">${h(config.body)}</div>
@@ -458,6 +490,29 @@
       `;
     }
 
+    function renderDetailCloseDialog(dialog) {
+      const navigating = Boolean(dialog && dialog.nextNodeId);
+      return `
+        ${renderOverlay('close-dialog')}
+        <div class="modal-shell">
+          <section class="modal">
+            <header class="modal-head">
+              <div class="modal-title">未保存の変更</div>
+              <button class="button ghost icon" type="button" data-action="close-dialog" aria-label="確認画面を閉じる">${icon('x')}</button>
+            </header>
+            <div class="modal-body">
+              <div class="meta-line">${navigating ? '変更を保存してから別のタスクを開きますか' : '変更を保存してから詳細を閉じますか'}</div>
+            </div>
+            <footer class="modal-foot">
+              <button class="button secondary" type="button" data-action="close-dialog">編集に戻る</button>
+              <button class="button secondary" type="button" data-action="discard-detail-close">変更を破棄</button>
+              <button class="button primary" type="button" data-action="save-detail-close" ${state.currentMember ? '' : 'disabled'}>${icon('check')}${navigating ? '保存して移動' : '保存して閉じる'}</button>
+            </footer>
+          </section>
+        </div>
+      `;
+    }
+
     function renderMembersDialog() {
       const dialog = state.dialog;
       const draft = dialog.draft;
@@ -468,7 +523,7 @@
           <section class="modal wide-modal">
             <header class="modal-head">
               <div class="modal-title">メンバー</div>
-              <button class="button ghost icon" type="button" data-action="close-dialog">${icon('x')}</button>
+              <button class="button ghost icon" type="button" data-action="close-dialog" aria-label="メンバー管理を閉じる">${icon('x')}</button>
             </header>
             <div class="modal-body">
               <form id="memberForm" class="field-grid">
@@ -529,7 +584,7 @@
           <section class="modal wide-modal">
             <header class="modal-head">
               <div class="modal-title">プロジェクト設定</div>
-              <button class="button ghost icon" type="button" data-action="close-dialog">${icon('x')}</button>
+              <button class="button ghost icon" type="button" data-action="close-dialog" aria-label="プロジェクト設定を閉じる">${icon('x')}</button>
             </header>
             <div class="modal-body">
               <div class="settings-tabs">
@@ -734,7 +789,7 @@
       const triggerClass = `dropdown-trigger${config.plain ? ' inline-display-trigger' : ''}`;
       return `
         <div class="dropdown date-picker" data-dropdown="${h(id)}" data-scope="${h(scope)}" data-field="${h(field)}">
-          <button class="${triggerClass}" type="button" data-dropdown-trigger="${h(id)}" aria-haspopup="dialog" aria-expanded="${state.openDropdown === id ? 'true' : 'false'}">
+          <button class="${triggerClass}" type="button" data-dropdown-trigger="${h(id)}" aria-haspopup="dialog" aria-expanded="${state.openDropdown === id ? 'true' : 'false'}" ${config.disabled ? 'disabled' : ''}>
             <span class="dropdown-value">${config.triggerHtml || label}</span>
             ${config.plain ? '' : `<span class="dropdown-chevron">${icon('chevron-down')}</span>`}
           </button>
@@ -764,14 +819,14 @@
         <div class="dropdown-menu calendar-menu" role="dialog" aria-label="日付選択">
           ${config.scope === 'filters' ? renderCalendarTabs(id, mode) : ''}
           <div class="calendar-head">
-            <button class="button ghost icon compact" type="button" data-action="calendar-prev-month" data-calendar-id="${h(id)}" title="前の月">${icon('chevron-right', 'rotate-left')}</button>
+            <button class="button ghost icon compact" type="button" data-action="calendar-prev-month" data-calendar-id="${h(id)}" title="前の月" aria-label="前の月">${icon('chevron-right', 'rotate-left')}</button>
             <div class="calendar-title">${h(calendarMonthLabel(monthDay))}</div>
-            <button class="button ghost icon compact" type="button" data-action="calendar-next-month" data-calendar-id="${h(id)}" title="次の月">${icon('chevron-right')}</button>
+            <button class="button ghost icon compact" type="button" data-action="calendar-next-month" data-calendar-id="${h(id)}" title="次の月" aria-label="次の月">${icon('chevron-right')}</button>
           </div>
           <div class="calendar-weekdays">
             ${['日', '月', '火', '水', '木', '金', '土'].map(day => `<span>${day}</span>`).join('')}
           </div>
-          <div class="calendar-grid">
+          <div class="calendar-grid" role="group" aria-label="${h(calendarMonthLabel(monthDay))}">
             ${days.map(day => renderCalendarDay({
               id,
               config,
@@ -807,6 +862,7 @@
       const dateText = dayToDate(day);
       const today = localTodayDay();
       const date = new Date(day * 86400000);
+      const accessibleLabel = `${date.getUTCFullYear()}年${date.getUTCMonth() + 1}月${date.getUTCDate()}日`;
       const selected = calendarSelectedRange(config, mode, anchorDay, hoverDay);
       const minDate = normalizeClientDateText(config.minDate);
       const disabled = minDate && dateText < minDate;
@@ -822,7 +878,7 @@
         anchorDay === day && mode === 'range' && config.scope === 'filters' ? 'anchor' : ''
       ].filter(Boolean).join(' ');
       return `
-        <button class="${classes}" type="button" data-action="calendar-select-day" data-calendar-id="${h(id)}" data-calendar-scope="${h(config.scope)}" data-calendar-field="${h(config.field)}" data-calendar-mode="${h(mode)}" data-calendar-day="${h(dateText)}" data-calendar-hover-day="${day}" ${disabled ? 'disabled' : ''}>
+        <button class="${classes}" type="button" aria-label="${h(accessibleLabel)}" aria-pressed="${isStart || isEnd ? 'true' : 'false'}" ${day === today ? 'aria-current="date"' : ''} data-action="calendar-select-day" data-calendar-id="${h(id)}" data-calendar-scope="${h(config.scope)}" data-calendar-field="${h(config.field)}" data-calendar-mode="${h(mode)}" data-calendar-day="${h(dateText)}" data-calendar-hover-day="${day}" ${disabled ? 'disabled' : ''}>
           ${date.getUTCDate()}
         </button>
       `;

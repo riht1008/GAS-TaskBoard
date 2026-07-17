@@ -13,7 +13,14 @@
       }
       const root = state.nodesById.get(state.rootId);
       const ganttScroll = captureGanttScroll();
-      app.className = 'shell';
+      const wbsBlockedBySave = hasPendingMutations();
+      const wbsUnavailable = state.exportWbsSubmitting || wbsBlockedBySave || !state.currentMember;
+      const wbsTitle = !state.currentMember
+        ? 'メンバー登録後に利用できます'
+        : wbsBlockedBySave
+          ? '保存完了後にWBSへ出力できます'
+          : 'WBSシートを上書きします';
+      app.className = state.currentMember ? 'shell' : 'shell shell-unregistered';
       app.innerHTML = `
         <header class="topbar">
           <div class="project-title" title="${h(root ? root.name : '')}">${h(root ? root.name : 'タスク管理')}</div>
@@ -26,12 +33,12 @@
             <button class="sync-pill sync-${h(state.syncStatus)}" type="button" data-action="force-sync" title="${h(syncLabel())}。クリックして最新の状態を確認" aria-label="${h(syncLabel())}。クリックして最新の状態を確認">
               ${icon(syncIconName())}<span>${h(syncPillLabel())}</span>
             </button>
-            <button class="button ghost" data-action="members">${icon('users')}メンバー</button>
-            <button class="button ghost icon" data-action="project-settings" title="プロジェクト設定" aria-label="プロジェクト設定">${icon('settings')}</button>
-            <button class="button secondary" data-action="confirm-export-wbs" ${state.exportWbsSubmitting ? 'disabled' : ''}>${state.exportWbsSubmitting ? '<span class="btn-spinner"></span>' : icon('database')}WBSに上書き</button>
+            <button class="button ghost" data-action="members" title="${state.currentMember ? 'メンバーを管理' : 'メンバー登録後に管理できます'}" ${state.currentMember ? '' : 'disabled'}>${icon('users')}メンバー</button>
+            <button class="button ghost icon" data-action="project-settings" title="プロジェクト設定" aria-label="プロジェクト設定" ${state.currentMember ? '' : 'disabled'}>${icon('settings')}</button>
+            <button class="button secondary" data-action="confirm-export-wbs" title="${h(wbsTitle)}" aria-label="${h(wbsTitle)}" ${wbsUnavailable ? 'disabled' : ''}>${state.exportWbsSubmitting ? '<span class="btn-spinner"></span>' : icon('database')}WBSに上書き</button>
           </div>
         </header>
-        ${state.currentMember ? '' : `<button class="banner banner-action" type="button" data-action="join-member">このメールアドレスはメンバー未登録です。保存操作は利用不可</button>`}
+        ${state.currentMember ? '' : `<button class="banner banner-action" type="button" data-action="join-member"><strong>閲覧モード</strong> · このメールアドレスはメンバー未登録です。登録すると保存操作を利用できます</button>`}
         ${renderFilters()}
         <main class="main">${renderMain()}</main>
       `;
@@ -151,10 +158,15 @@
       const drawerRoot = document.getElementById('drawerRoot');
       const dialogSurface = dialogRoot.querySelector('.modal, .drawer');
       const drawerSurface = drawerRoot.querySelector('.modal, .drawer');
-      [dialogSurface, drawerSurface].filter(Boolean).forEach(surface => {
+      [dialogSurface, drawerSurface].filter(Boolean).forEach((surface, index) => {
         surface.setAttribute('role', 'dialog');
         surface.setAttribute('aria-modal', 'true');
         if (!surface.hasAttribute('tabindex')) surface.setAttribute('tabindex', '-1');
+        const title = surface.querySelector('.modal-title, .drawer-title');
+        if (title) {
+          if (!title.id) title.id = index === 0 ? 'activeDialogTitle' : 'activeDrawerTitle';
+          surface.setAttribute('aria-labelledby', title.id);
+        }
       });
       const hasOverlay = Boolean(dialogSurface || drawerSurface);
       app.inert = hasOverlay;
@@ -449,14 +461,25 @@
       return renderList();
     }
 
+    function renderFilteredEmptyNotice(message) {
+      return `
+        <div class="filtered-empty-notice" role="status">
+          <span>${h(message || '現在の条件に一致するタスクはありません')}</span>
+          <button class="button secondary compact" type="button" data-action="clear-filters">条件を解除</button>
+        </div>
+      `;
+    }
+
     function renderKanban() {
       const visibleCards = filteredNodes()
         .filter(node => node.id !== state.rootId)
         .filter(node => state.showGroupsInKanban || node.isLeaf);
+      const filteredEmpty = hasActiveFilters() && !visibleCards.length;
       return `
-        <section class="view kanban-view">
+        <section class="view kanban-view ${filteredEmpty ? 'has-filtered-empty' : ''}">
+          ${filteredEmpty ? renderFilteredEmptyNotice() : ''}
           <div class="board-layout ${state.kanbanMemberRailCollapsed ? 'member-rail-collapsed' : ''}">
-            ${state.kanbanMemberRailCollapsed ? '' : renderMemberRail()}
+            ${state.kanbanMemberRailCollapsed ? '' : renderMemberRail(visibleCards)}
             <div class="columns">
               ${state.statusColumns.map(column => renderKanbanColumn(column, visibleCards)).join('')}
             </div>
@@ -465,8 +488,8 @@
       `;
     }
 
-    function renderMemberRail() {
-      const activeNodes = state.nodes.filter(node => node.id !== state.rootId);
+    function renderMemberRail(visibleCards) {
+      const activeNodes = Array.isArray(visibleCards) ? visibleCards : [];
       return `
         <aside class="member-rail">
           <div class="rail-head">
@@ -498,17 +521,17 @@
         <article class="kanban-column" data-column-id="${h(column.id)}" style="--status-color:${h(column.color || defaultStatusColor(column))}">
           <div class="status-strip"></div>
           <header class="column-head">
-            <div class="column-title-row" draggable="true" data-column-drag="${h(column.id)}" title="ドラッグして並び替え">
+            <div class="column-title-row" draggable="${state.currentMember ? 'true' : 'false'}" data-column-drag="${h(column.id)}" title="${state.currentMember ? 'ドラッグして並び替え' : 'メンバー登録後に並び替えできます'}">
               <span class="drag-handle">${icon('grip')}</span>
               <div class="column-title" title="${h(column.name)}">${h(column.name)}</div>
               ${column.isDoneColumn ? '<span class="chip">完了列</span>' : ''}
               <span class="count-badge">${cards.length}</span>
-              <button class="button compact ghost icon" data-action="new-node" data-parent-id="${h(state.rootId)}" data-status-id="${h(column.id)}" title="この列にタスクを追加">${icon('plus')}</button>
-              <button class="button compact ghost icon" data-action="edit-status" data-column-id="${h(column.id)}" title="列を編集">${icon('edit')}</button>
+              <button class="button compact ghost icon" data-action="new-node" data-parent-id="${h(state.rootId)}" data-status-id="${h(column.id)}" title="この列にタスクを追加" ${state.currentMember ? '' : 'disabled'}>${icon('plus')}</button>
+              <button class="button compact ghost icon" data-action="edit-status" data-column-id="${h(column.id)}" title="列を編集" ${state.currentMember ? '' : 'disabled'}>${icon('edit')}</button>
             </div>
           </header>
           <div class="column-body ${state.dragOverColumnId === column.id ? 'drag-over' : ''}" data-drop-column="${h(column.id)}">
-            ${cards.length ? cards.map(renderCard).join('') : `<button class="empty-drop" data-action="new-node" data-parent-id="${h(state.rootId)}" data-status-id="${h(column.id)}" aria-label="タスクを追加">${icon('plus')}</button>`}
+            ${cards.length ? cards.map(renderCard).join('') : `<button class="empty-drop" data-action="new-node" data-parent-id="${h(state.rootId)}" data-status-id="${h(column.id)}" aria-label="タスクを追加" ${state.currentMember ? '' : 'disabled'}>${icon('plus')}</button>`}
           </div>
         </article>
       `;
@@ -516,10 +539,10 @@
 
     function renderCard(node) {
       return `
-        <article class="task-card ${state.draggingCardId === node.id ? 'dragging' : ''}" draggable="true" data-card-id="${h(node.id)}" style="--priority-color:${priorityColorVar(node.priority)}">
+        <article class="task-card ${state.draggingCardId === node.id ? 'dragging' : ''}" draggable="${state.currentMember ? 'true' : 'false'}" tabindex="0" role="button" aria-label="${h(node.name || '新しいタスク')}を開く" data-card-id="${h(node.id)}" style="--priority-color:${priorityColorVar(node.priority)}">
           ${state.savingNodeIds.has(node.id) ? '<span class="saving-dot"></span>' : ''}
           <span class="card-drag-handle" title="ドラッグして並び替え">${icon('grip')}</span>
-          <div class="task-card-title">${h(node.name || '新しいタスク')}</div>
+          <div class="task-card-title" title="${h(node.name || '新しいタスク')}">${h(node.name || '新しいタスク')}</div>
           <div class="card-meta">
             ${renderAvatars(node.assigneeIds)}
             ${renderWbsExcludedChip(node)}
@@ -539,10 +562,10 @@
             <div class="empty-list"><div class="empty-list-inner">
               ${filtered
                 ? `<div class="inline-actions">
-                    <button class="button primary" data-action="create-child-shell" data-parent-id="${h(state.rootId)}">${icon('plus')}タスクを追加</button>
+                    <button class="button primary" data-action="create-child-shell" data-parent-id="${h(state.rootId)}" ${state.currentMember ? '' : 'disabled'}>${icon('plus')}タスクを追加</button>
                     <button class="button secondary" data-action="clear-filters">${icon('x')}条件を解除</button>
                    </div><div class="meta-line">作成したタスクは現在の条件では非表示になる場合があります</div>`
-                : `<button class="button primary" data-action="create-child-shell" data-parent-id="${h(state.rootId)}">${icon('plus')}最初のタスクを追加</button>`}
+                : `<button class="button primary" data-action="create-child-shell" data-parent-id="${h(state.rootId)}" ${state.currentMember ? '' : 'disabled'}>${icon('plus')}最初のタスクを追加</button>`}
             </div></div>
           </section>
         `;
@@ -587,29 +610,29 @@
         <tr class="${state.shellNodeId === node.id ? 'shell-node-row' : ''}" data-tree-node="${h(node.id)}">
           <td>
             <div class="tree-cell">
-              <span class="row-drag-handle" draggable="true" data-node-drag-handle="${h(node.id)}" title="ドラッグして並び替え">${icon('grip')}</span>
+              <span class="row-drag-handle" draggable="${state.currentMember ? 'true' : 'false'}" data-node-drag-handle="${h(node.id)}" title="${state.currentMember ? 'ドラッグして並び替え' : 'メンバー登録後に並び替えできます'}">${icon('grip')}</span>
               <span class="indent" style="--tree-depth:${depth}"></span>
               ${node.hasChildren ? `<button class="button ghost icon compact" data-toggle-node="${h(node.id)}">${icon(state.collapsed.has(node.id) ? 'chevron-right' : 'chevron-down')}</button>` : '<span class="button icon compact" aria-hidden="true"></span>'}
-              <input class="inline-cell-input inline-name-input ${node.name ? '' : 'placeholder'}" data-inline-node="${h(node.id)}" data-inline-field="name" value="${h(node.name || '')}" placeholder="新しいタスク">
+              <input class="inline-cell-input inline-name-input ${node.name ? '' : 'placeholder'}" data-inline-node="${h(node.id)}" data-inline-field="name" value="${h(node.name || '')}" placeholder="新しいタスク" ${state.currentMember ? '' : 'readonly'}>
               ${renderWbsExcludedChip(node)}
               <button class="button ghost icon compact" data-open-node="${h(node.id)}" title="編集">${icon('edit')}</button>
               ${showAdd ? `<button class="button ghost icon compact row-add-child" data-action="create-child-shell" data-parent-id="${h(node.id)}" title="子タスクを追加">${icon('plus')}</button>` : ''}
               ${state.savingNodeIds.has(node.id) ? '<span class="saving-dot inline"></span>' : ''}
             </div>
           </td>
-          <td>${renderDropdown({ scope: inlineScope, field: 'statusColumnId', selected: node.statusColumnId, plain: true, triggerHtml: renderStatusChip(node.statusColumnId), options: state.statusColumns.map(column => ({ value: column.id, label: column.name, color: column.color || defaultStatusColor(column) })) })}</td>
-          <td>${renderDropdown({ scope: inlineScope, field: 'assigneeIds', selected: node.assigneeIds, multi: true, plain: true, triggerHtml: renderAvatars(node.assigneeIds), placeholder: '未割当', options: state.members.map(member => ({ value: member.id, label: member.name, avatar: member })) })}</td>
-          <td>${renderDropdown({ scope: inlineScope, field: 'priority', selected: node.priority, plain: true, triggerHtml: `<span class="chip">${h(priorityLabel(node.priority))}</span>`, options: priorityOptions() })}</td>
+          <td>${renderDropdown({ scope: inlineScope, field: 'statusColumnId', selected: node.statusColumnId, disabled: !state.currentMember, plain: true, triggerHtml: renderStatusChip(node.statusColumnId), options: state.statusColumns.map(column => ({ value: column.id, label: column.name, color: column.color || defaultStatusColor(column) })) })}</td>
+          <td>${renderDropdown({ scope: inlineScope, field: 'assigneeIds', selected: node.assigneeIds, disabled: !state.currentMember, multi: true, plain: true, triggerHtml: renderAvatars(node.assigneeIds), placeholder: '未割当', options: state.members.map(member => ({ value: member.id, label: member.name, avatar: member })) })}</td>
+          <td>${renderDropdown({ scope: inlineScope, field: 'priority', selected: node.priority, disabled: !state.currentMember, plain: true, triggerHtml: `<span class="chip">${h(priorityLabel(node.priority))}</span>`, options: priorityOptions() })}</td>
           <td>
             <div class="inline-date-range">
-              ${renderDatePicker({ scope: inlineScope, field: 'startDate', selected: node.startDate, endDate: node.endDate, placeholder: '開始', plain: true, triggerHtml: renderInlineDateBadge(node.startDate, '開始', '') })}
-              ${renderDatePicker({ scope: inlineScope, field: 'endDate', selected: node.endDate, startDate: node.startDate, minDate: node.startDate, placeholder: '終了', plain: true, triggerHtml: renderInlineDateBadge(node.endDate, '終了', dueClass(node.endDate)) })}
+              ${renderDatePicker({ scope: inlineScope, field: 'startDate', selected: node.startDate, disabled: !state.currentMember, endDate: node.endDate, placeholder: '開始', plain: true, triggerHtml: renderInlineDateBadge(node.startDate, '開始', '') })}
+              ${renderDatePicker({ scope: inlineScope, field: 'endDate', selected: node.endDate, disabled: !state.currentMember, startDate: node.startDate, minDate: node.startDate, placeholder: '終了', plain: true, triggerHtml: renderInlineDateBadge(node.endDate, '終了', dueClass(node.endDate)) })}
             </div>
           </td>
           <td>
             ${node.hasChildren
               ? `<span class="progress-pill" style="--progress-color:${h(progressTone)}">${Math.round(node.progress)}%</span>`
-              : renderDropdown({ scope: inlineScope, field: 'progress', selected: String(progressValue), plain: true, disabled: node.statusColumnId === doneStatusColumnId(), triggerHtml: `<span class="progress-pill" style="--progress-color:${h(progressTone)}">${progressValue}%</span>`, options: progressOptions() })}
+              : renderDropdown({ scope: inlineScope, field: 'progress', selected: String(progressValue), plain: true, disabled: !state.currentMember || node.statusColumnId === doneStatusColumnId(), triggerHtml: `<span class="progress-pill" style="--progress-color:${h(progressTone)}">${progressValue}%</span>`, options: progressOptions() })}
           </td>
         </tr>
       `;
@@ -654,7 +677,7 @@
       const scale = ganttScale(displayRows);
       const timelineRows = ganttTimelineRows(scale);
       const timelineHeight = timelineRows.length * GANTT_ROW_HEIGHT;
-      const emptyLaneCount = Math.max(10, Math.ceil((18 - displayRows.length) / 1));
+      const emptyLaneCount = state.currentMember ? Math.max(10, Math.ceil(18 - displayRows.length)) : 0;
       const taskHeight = Math.max((displayRows.length + emptyLaneCount) * GANTT_ROW_HEIGHT, 480);
       const height = timelineHeight + taskHeight;
       const today = localTodayDay();
@@ -664,8 +687,9 @@
       const previousScale = GANTT_SCALE_LEVELS[Math.max(0, activeScaleIndex - 1)];
       const nextScale = GANTT_SCALE_LEVELS[Math.min(GANTT_SCALE_LEVELS.length - 1, activeScaleIndex + 1)];
       const treeWidth = clampGanttTreeWidth(state.ganttTreeWidth);
+      const filteredEmpty = hasActiveFilters() && !displayRows.length;
       return `
-        <section class="view">
+        <section class="view gantt-view ${filteredEmpty ? 'has-filtered-empty' : ''}">
           <div class="view-toolbar">
             <div class="segmented">
               ${['day', 'week', 'month'].map(zoom => `<button class="button ${state.ganttZoom === zoom ? 'active' : ''}" data-zoom="${zoom}">${zoomLabel(zoom)}</button>`).join('')}
@@ -678,11 +702,12 @@
                 <button class="gantt-scale-step" type="button" data-gantt-scale-level="${nextScale}" ${activeScaleIndex === GANTT_SCALE_LEVELS.length - 1 ? 'disabled' : ''} aria-label="拡大">＋</button>
               </div>
             </div>
-            <button class="button primary compact" type="button" data-action="create-child-shell" data-parent-id="${h(state.rootId)}">${icon('plus')}タスクを追加</button>
-            <button class="button secondary compact" type="button" data-action="project-settings" data-tab="${h(state.projectSettingsTab || 'milestones')}">${icon('settings')}予定設定</button>
+            <button class="button primary compact" type="button" data-action="create-child-shell" data-parent-id="${h(state.rootId)}" ${state.currentMember ? '' : 'disabled'}>${icon('plus')}タスクを追加</button>
+            <button class="button secondary compact" type="button" data-action="project-settings" data-tab="${h(state.projectSettingsTab || 'milestones')}" ${state.currentMember ? '' : 'disabled'}>${icon('settings')}予定設定</button>
             <button class="button secondary compact" type="button" data-action="toggle-gantt-timeline">${state.ganttTimelineCollapsed ? icon('chevron-down') + '予定を表示' : icon('chevron-right') + '予定を畳む'}</button>
             <button class="button secondary compact" type="button" data-action="gantt-jump-today">今日へ</button>
           </div>
+          ${filteredEmpty ? renderFilteredEmptyNotice() : ''}
           <div class="gantt-frame" style="--gantt-tree-width:${treeWidth}px">
             <div class="gantt-left">
               <div class="gantt-axis-left"><span>タスク名</span><span>日付範囲</span><span>日数</span></div>
@@ -698,7 +723,7 @@
                 ${renderWeekendBands(scale, height)}
                 ${renderGanttTimelineRows(timelineRows, scale)}
                 ${renderGanttInteractionRows(displayRows, emptyLaneCount, timelineHeight)}
-                ${todayLeft >= 0 && todayLeft <= scale.width ? `<div class="today-column" style="left:${todayLeft}px;width:${scale.dayWidth}px;height:${height}px"></div>` : ''}
+                ${todayLeft >= 0 && todayLeft <= scale.width ? `<div class="today-column" style="left:${todayLeft}px;height:${height}px" aria-hidden="true"></div>` : ''}
                 ${renderGanttArrows(displayRows, scale, height, timelineHeight)}
                 ${displayRows.map((node, index) => renderGanttBar(node, index, scale, timelineHeight)).join('')}
               </div>
@@ -748,7 +773,7 @@
       return `
         <div class="gantt-tree-row ${state.shellNodeId === node.id ? 'shell-node-row' : ''}" data-tree-node="${h(node.id)}">
           <div class="gantt-tree-main">
-            <span class="row-drag-handle" draggable="true" data-node-drag-handle="${h(node.id)}" title="ドラッグして並び替え">${icon('grip')}</span>
+            <span class="row-drag-handle" draggable="${state.currentMember ? 'true' : 'false'}" data-node-drag-handle="${h(node.id)}" title="${state.currentMember ? 'ドラッグして並び替え' : 'メンバー登録後に並び替えできます'}">${icon('grip')}</span>
             <span class="indent" style="--tree-depth:${taskDepthOf(node.id)}"></span>
             ${node.hasChildren ? `<button class="button ghost icon compact" data-toggle-node="${h(node.id)}">${icon(state.collapsed.has(node.id) ? 'chevron-right' : 'chevron-down')}</button>` : '<span class="button icon compact" aria-hidden="true"></span>'}
             <span class="tree-name ${node.name ? '' : 'placeholder'}" data-open-node="${h(node.id)}">${h(node.name || '新しいタスク')}</span>
@@ -769,6 +794,9 @@
         const top = topOffset + index * GANTT_ROW_HEIGHT;
         const nodeAttr = `data-gantt-row-node="${h(node.id)}"`;
         if (!node.startDate && !node.endDate) {
+          if (!state.currentMember) {
+            return `<div class="gantt-row" ${nodeAttr} style="top:${top}px"><span class="gantt-row-hint">日付未設定</span></div>`;
+          }
           return `<div class="gantt-row create-target schedule-target" ${nodeAttr} data-gantt-schedule-node="${h(node.id)}" data-gantt-row-top="${top}" style="top:${top}px"><span class="gantt-row-hint">ドラッグして日程を設定</span></div>`;
         }
         if (node.hasChildren && canCreateChild(node)) {
@@ -859,12 +887,13 @@
       if (!start || !end) return '';
       const left = (dateToDay(start) - scale.startDay) * scale.dayWidth;
       const width = Math.max(24, (dateToDay(end) - dateToDay(start) + 1) * scale.dayWidth);
-      const canDrag = Boolean(node.startDate && node.endDate);
+      const canDrag = Boolean(state.currentMember && node.startDate && node.endDate);
       const barColor = statusColor(node.statusColumnId);
       const top = (Number(topOffset) || 0) + index * GANTT_ROW_HEIGHT + 8;
       return `
         <div class="gantt-bar ${state.shellNodeId === node.id ? 'shell-node-bar' : ''} ${canDrag ? '' : 'readonly'}" data-gantt-bar="${h(node.id)}" style="left:${left}px;top:${top}px;width:${width}px;--gantt-status-color:${h(barColor)}">
           ${state.savingNodeIds.has(node.id) ? '<span class="saving-dot"></span>' : ''}
+          <span class="gantt-progress" style="width:${Math.max(0, Math.min(100, inlineProgressValue(node)))}%" aria-hidden="true"></span>
           ${canDrag ? '<span class="bar-handle left" data-handle="left"></span>' : ''}
           <span class="gantt-label">${h(node.name || '新しいタスク')}</span>
           ${canDrag ? '<span class="bar-handle right" data-handle="right"></span>' : ''}

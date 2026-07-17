@@ -1,6 +1,48 @@
     // User actions, mutations, shell creation, comments, and gantt drags.
     let createPreviewTimer = null;
 
+    const FOCUS_DESCRIPTOR_KEYS = [
+      'action', 'cardId', 'openNode', 'view', 'tab', 'dropdownTrigger', 'memberId',
+      'milestoneId', 'meetingId', 'dependencyId', 'columnId', 'nodeId'
+    ];
+
+    function focusDataAttributeName(key) {
+      return `data-${key.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`)}`;
+    }
+
+    function captureActiveFocusDescriptor() {
+      const active = document.activeElement;
+      if (!active || !active.closest) return null;
+      const selector = FOCUS_DESCRIPTOR_KEYS.map(key => `[${focusDataAttributeName(key)}]`).join(',');
+      const target = active.closest(selector);
+      if (!target || !target.dataset) return null;
+      const descriptor = {};
+      FOCUS_DESCRIPTOR_KEYS.forEach(key => {
+        if (target.dataset[key] !== undefined) descriptor[key] = target.dataset[key];
+      });
+      return Object.keys(descriptor).length ? descriptor : null;
+    }
+
+    function restoreFocusDescriptor(descriptor) {
+      if (!descriptor) return;
+      requestAnimationFrame(() => {
+        const selector = FOCUS_DESCRIPTOR_KEYS.map(key => `[${focusDataAttributeName(key)}]`).join(',');
+        const target = Array.from(document.querySelectorAll(selector)).find(element => (
+          Object.entries(descriptor).every(([key, value]) => element.dataset && element.dataset[key] === value)
+        ));
+        if (target && typeof target.focus === 'function') target.focus();
+      });
+    }
+
+    function openContextualConfirm(dialog) {
+      dialog.returnDialog = state.dialog || null;
+      dialog.returnFocus = captureActiveFocusDescriptor();
+      state.openDropdown = '';
+      state.calendarView = null;
+      state.dialog = dialog;
+      render();
+    }
+
     function defaultCreateStatusId() {
       const notStarted = state.statusColumns.find(column => column.name === '未着手');
       return notStarted ? notStarted.id : '';
@@ -109,6 +151,7 @@
       }
       state.dialog = {
         type: 'node',
+        opener: captureActiveFocusDescriptor(),
         draft: {
           name: '',
           parentId: parentId || state.rootId,
@@ -177,6 +220,7 @@
       const column = columnId ? state.statusById.get(columnId) : null;
       state.dialog = {
         type: 'status',
+        opener: captureActiveFocusDescriptor(),
         draft: {
           columnId: column ? column.id : '',
           name: column ? column.name : '',
@@ -267,8 +311,7 @@
     function confirmStatusDelete(columnId) {
       const column = state.statusById.get(columnId);
       if (!column) return;
-      state.dialog = { type: 'confirmStatusDelete', columnId, name: column.name };
-      render();
+      openContextualConfirm({ type: 'confirmStatusDelete', columnId, name: column.name });
     }
 
     async function deleteStatusConfirmed() {
@@ -289,6 +332,7 @@
         return;
       }
       const previousColumns = cloneValue(state.statusColumns);
+      if (state.dialog) state.dialog.returnDialog = null;
       closeDialog(false);
       queueBackgroundMutation('statusColumns', 'deleteStatusColumn', { columnId }, () => {
         state.statusColumns = state.statusColumns.filter(item => item.id !== columnId);
@@ -300,6 +344,7 @@
     function openMembersDialog() {
       state.dialog = {
         type: 'members',
+        opener: captureActiveFocusDescriptor(),
         draft: { memberId: '', name: '', email: '', company: '', color: defaultMemberColor() }
       };
       render();
@@ -308,6 +353,7 @@
     function openJoinDialog() {
       state.dialog = {
         type: 'join',
+        opener: captureActiveFocusDescriptor(),
         draft: {
           name: (state.currentEmail || '').split('@')[0] || '',
           color: defaultMemberColor()
@@ -405,6 +451,13 @@
         color: member.color || defaultMemberColor()
       };
       render();
+      requestAnimationFrame(() => {
+        const input = document.querySelector('#memberForm [data-draft-field="name"]');
+        if (!input) return;
+        input.scrollIntoView({ block: 'nearest' });
+        input.focus();
+        input.select();
+      });
     }
 
     function clearMemberDraft() {
@@ -416,13 +469,14 @@
     function confirmMemberDelete(memberId) {
       const member = state.memberById.get(memberId);
       if (!member) return;
-      state.dialog = {
+      const assignedCount = state.nodes.filter(node => (node.assigneeIds || []).includes(memberId)).length;
+      openContextualConfirm({
         type: 'confirmMemberDelete',
         memberId,
         name: member.name,
+        assignedCount,
         confirmSelf: state.currentMember && state.currentMember.id === memberId
-      };
-      render();
+      });
     }
 
     async function deleteMemberConfirmed() {
@@ -456,9 +510,16 @@
 
     function openProjectSettingsDialog(tab = state.projectSettingsTab || 'milestones') {
       state.projectSettingsTab = normalizeProjectSettingsTab(tab);
+      const drafts = {
+        milestones: defaultProjectSettingsDraft('milestones'),
+        meetings: defaultProjectSettingsDraft('meetings'),
+        slack: defaultProjectSettingsDraft('slack')
+      };
       state.dialog = {
         type: 'projectSettings',
-        draft: defaultProjectSettingsDraft(state.projectSettingsTab)
+        opener: captureActiveFocusDescriptor(),
+        drafts,
+        draft: drafts[state.projectSettingsTab]
       };
       render();
     }
@@ -480,8 +541,14 @@
 
     function switchProjectSettingsTab(tab) {
       if (!state.dialog || state.dialog.type !== 'projectSettings') return;
+      const currentTab = normalizeProjectSettingsTab(state.projectSettingsTab);
+      if (!state.dialog.drafts) state.dialog.drafts = {};
+      state.dialog.drafts[currentTab] = state.dialog.draft;
       state.projectSettingsTab = normalizeProjectSettingsTab(tab);
-      state.dialog.draft = defaultProjectSettingsDraft(state.projectSettingsTab);
+      if (!state.dialog.drafts[state.projectSettingsTab]) {
+        state.dialog.drafts[state.projectSettingsTab] = defaultProjectSettingsDraft(state.projectSettingsTab);
+      }
+      state.dialog.draft = state.dialog.drafts[state.projectSettingsTab];
       render();
     }
 
@@ -489,12 +556,14 @@
       const milestone = state.milestones.find(item => item.id === milestoneId);
       if (!milestone || !state.dialog || state.dialog.type !== 'projectSettings') return;
       state.projectSettingsTab = 'milestones';
-      state.dialog.draft = {
+      const draft = {
         milestoneId: milestone.id,
         name: milestone.name,
         date: normalizeClientDateText(milestone.date),
         note: milestone.note || ''
       };
+      state.dialog.draft = draft;
+      if (state.dialog.drafts) state.dialog.drafts.milestones = draft;
       render();
     }
 
@@ -502,13 +571,18 @@
       const meeting = state.meetings.find(item => item.id === meetingId);
       if (!meeting || !state.dialog || state.dialog.type !== 'projectSettings') return;
       state.projectSettingsTab = 'meetings';
-      state.dialog.draft = meetingDraftFromMeeting(meeting);
+      const draft = meetingDraftFromMeeting(meeting);
+      state.dialog.draft = draft;
+      if (state.dialog.drafts) state.dialog.drafts.meetings = draft;
       render();
     }
 
     function clearProjectSettingsDraft() {
       if (!state.dialog || state.dialog.type !== 'projectSettings') return;
-      state.dialog.draft = defaultProjectSettingsDraft(state.projectSettingsTab);
+      const tab = normalizeProjectSettingsTab(state.projectSettingsTab);
+      const draft = defaultProjectSettingsDraft(tab);
+      state.dialog.draft = draft;
+      if (state.dialog.drafts) state.dialog.drafts[tab] = draft;
       render();
     }
 
@@ -561,8 +635,14 @@
       });
     }
 
+    function confirmSlackDisconnect() {
+      if (!state.slackSettings || !state.slackSettings.configured) return;
+      openContextualConfirm({ type: 'confirmSlackDisconnect' });
+    }
+
     function disconnectSlackSettings() {
       const previous = { ...state.slackSettings };
+      closeDialog(false);
       queueBackgroundMutation('slack-settings', 'disconnectSlack', {}, () => {
         state.slackSettings = Object.assign({}, state.slackSettings, {
           configured: false,
@@ -664,15 +744,13 @@
     function confirmMilestoneDelete(milestoneId) {
       const milestone = state.milestones.find(item => item.id === milestoneId);
       if (!milestone) return;
-      state.dialog = { type: 'confirmMilestoneDelete', milestoneId, name: milestone.name };
-      render();
+      openContextualConfirm({ type: 'confirmMilestoneDelete', milestoneId, name: milestone.name });
     }
 
     function confirmMeetingDelete(meetingId) {
       const meeting = state.meetings.find(item => item.id === meetingId);
       if (!meeting) return;
-      state.dialog = { type: 'confirmMeetingDelete', meetingId, name: meeting.name };
-      render();
+      openContextualConfirm({ type: 'confirmMeetingDelete', meetingId, name: meeting.name });
     }
 
     function deleteMilestoneConfirmed() {
@@ -700,8 +778,11 @@
     }
 
     function confirmExportWbs() {
-      state.dialog = { type: 'confirmExportWbs' };
-      render();
+      if (hasPendingMutations()) {
+        showToast('保存完了後にWBSへ出力できます', 'warning');
+        return;
+      }
+      openContextualConfirm({ type: 'confirmExportWbs' });
     }
 
     async function exportWbsNow() {
@@ -734,6 +815,11 @@
     function openNode(nodeId, options = {}) {
       const node = state.nodesById.get(nodeId);
       if (!node) return;
+      if (!options.skipDirtyCheck && state.drawerNodeId && state.drawerNodeId !== nodeId && hasUnsavedDetailDraft()) {
+        openContextualConfirm({ type: 'confirmDetailClose', nextNodeId: nodeId });
+        return;
+      }
+      if (!state.drawerNodeId) state.drawerReturnFocus = options.returnFocus || captureActiveFocusDescriptor();
       if (state.drawerNodeId !== nodeId) {
         state.commentReplyTo = null;
         state.commentMention = null;
@@ -751,9 +837,15 @@
     }
 
     function closeDrawer(options = {}) {
+      if (!options.force && !options.skipShellCleanup && hasUnsavedDetailDraft()) {
+        openContextualConfirm({ type: 'confirmDetailClose' });
+        return;
+      }
+      const returnFocus = state.drawerReturnFocus;
       const shellAction = options.skipShellCleanup ? null : prepareShellCloseAction();
       if (shellAction === 'keep-open') return;
       state.drawerNodeId = '';
+      state.drawerReturnFocus = null;
       state.detailDraftNodeId = '';
       state.detailDraft = null;
       state.openDropdown = '';
@@ -761,6 +853,7 @@
       state.commentReplyTo = null;
       state.commentMention = null;
       render();
+      restoreFocusDescriptor(returnFocus);
       if (shellAction && shellAction.type === 'delete') {
         deleteShellNode(shellAction.nodeId);
       }
@@ -774,12 +867,30 @@
       // completes and its result still merges in via applyMutationResult, and locking
       // the whole dialog would amount to a blocking spinner, which this app avoids in
       // favor of small, scoped indicators (only the submit button itself locks).
-      if (state.dialog && state.dialog.type === 'join') {
+      const closingDialog = state.dialog;
+      if (closingDialog && closingDialog.type === 'join') {
         state.joinPromptDismissed = true;
       }
-      state.dialog = null;
+      const returnDialog = closingDialog && closingDialog.returnDialog ? closingDialog.returnDialog : null;
+      const returnFocus = closingDialog && (closingDialog.returnFocus || closingDialog.opener);
+      state.dialog = returnDialog;
       state.openDropdown = '';
       if (shouldRender) render();
+      restoreFocusDescriptor(returnFocus);
+    }
+
+    function discardDetailChangesAndClose() {
+      const nextNodeId = state.dialog && state.dialog.nextNodeId;
+      const drawerReturnFocus = state.drawerReturnFocus;
+      closeDialog(false);
+      closeDrawer({ force: true });
+      if (nextNodeId) openNode(nextNodeId, { skipDirtyCheck: true, returnFocus: drawerReturnFocus });
+    }
+
+    function saveDetailChangesAndClose() {
+      const nextNodeId = state.dialog && state.dialog.nextNodeId;
+      closeDialog(false);
+      return saveDetail({ closeAfter: true, openAfterNodeId: nextNodeId || '' });
     }
 
     async function createChildShell(parentId, options = {}) {
@@ -969,6 +1080,14 @@
         && a.assigneeIds.join(',') === b.assigneeIds.join(',');
     }
 
+    function hasUnsavedDetailDraft() {
+      if (!state.drawerNodeId || !state.detailDraft || state.detailDraftNodeId !== state.drawerNodeId) return false;
+      if (state.shellNodeId && state.shellNodeId === state.drawerNodeId) return false;
+      const node = state.nodesById.get(state.drawerNodeId);
+      if (!node) return false;
+      return !sameDetailSnapshot(detailSnapshotFromDraft(state.detailDraft), detailSnapshotFromNode(node));
+    }
+
     function focusDetailNameInput() {
       requestAnimationFrame(() => {
         const input = document.querySelector('[data-detail-name-input]');
@@ -1039,8 +1158,9 @@
       }
       const wasShell = state.shellNodeId === node.id;
       const parentId = node.parentId || state.rootId;
-      const reopenDraft = wasShell ? { ...patch, assigneeIds: patch.assigneeIds.slice() } : null;
-      const conflictDraft = !wasShell ? detailSnapshotFromDraft(draft) : null;
+      const drawerReturnFocus = state.drawerReturnFocus;
+      const reopenDraft = detailSnapshotFromDraft(draft);
+      const conflictDraft = !wasShell ? reopenDraft : null;
       if (wasShell) {
         clearShellTracking();
         state.drawerNodeId = '';
@@ -1060,44 +1180,32 @@
         skipBaseUpdatedAt: wasShell,
         onResult: result => {
           if (result && result.ok === false && result.code === 'CONFLICT' && conflictDraft) {
+            state.drawerReturnFocus = drawerReturnFocus;
             reopenDetailDraftAfterConflict(node.id, conflictDraft);
           }
         },
         onSuccess: () => {
+          if (options.openAfterNodeId) {
+            openNode(options.openAfterNodeId, { skipDirtyCheck: true, returnFocus: drawerReturnFocus });
+            return;
+          }
           if (options.createNext) {
             createChildShell(parentId);
             return;
           }
         },
         onError: () => {
-          if (!wasShell) return;
-          const target = state.nodesById.get(node.id);
-          if (!target || !reopenDraft) return;
-          state.drawerNodeId = node.id;
-          state.detailDraftNodeId = node.id;
-          state.detailDraft = {
-            baseUpdatedAt: target.updatedAt || '',
-            name: reopenDraft.name,
-            statusColumnId: reopenDraft.statusColumnId,
-            priority: reopenDraft.priority,
-            assigneeIds: reopenDraft.assigneeIds.slice(),
-            startDate: reopenDraft.startDate,
-            endDate: reopenDraft.endDate,
-            description: reopenDraft.description,
-            deliverable: reopenDraft.deliverable,
-            note: reopenDraft.note,
-            progress: reopenDraft.progress,
-            includeInWbs: reopenDraft.includeInWbs,
-            dependency: { predecessorId: '', successorId: '' }
-          };
-          state.shellNodeId = node.id;
-          state.shellBaseline = detailSnapshotFromNode(target);
-          state.focusDetailName = true;
+          state.drawerReturnFocus = drawerReturnFocus;
+          restoreDetailDraftSnapshot(node.id, reopenDraft, { shell: wasShell, focusName: true });
         }
       });
     }
 
     function reopenDetailDraftAfterConflict(nodeId, snapshot) {
+      restoreDetailDraftSnapshot(nodeId, snapshot);
+    }
+
+    function restoreDetailDraftSnapshot(nodeId, snapshot, options = {}) {
       const target = state.nodesById.get(nodeId);
       if (!target || !snapshot) return;
       if (state.drawerNodeId && state.drawerNodeId !== nodeId) return;
@@ -1119,6 +1227,11 @@
         includeInWbs: snapshot.includeInWbs,
         dependency: { predecessorId: '', successorId: '' }
       };
+      if (options.shell) {
+        state.shellNodeId = nodeId;
+        state.shellBaseline = detailSnapshotFromNode(target);
+      }
+      state.focusDetailName = Boolean(options.focusName);
       render();
     }
 
@@ -1150,12 +1263,11 @@
     function confirmNodeDelete(nodeId) {
       const node = state.nodesById.get(nodeId);
       if (!node) return;
-      state.dialog = {
+      openContextualConfirm({
         type: 'confirmNodeDelete',
         nodeId,
         count: collectDescendants(nodeId).length + 1
-      };
-      render();
+      });
     }
 
     async function deleteNodeConfirmed() {
@@ -1233,8 +1345,7 @@
     }
 
     function confirmDependencyDelete(dependencyId) {
-      state.dialog = { type: 'confirmDependencyDelete', dependencyId };
-      render();
+      openContextualConfirm({ type: 'confirmDependencyDelete', dependencyId });
     }
 
     async function deleteDependencyConfirmed() {
@@ -1554,6 +1665,7 @@
       if (!mention || !mention.active || mention.nodeId !== state.drawerNodeId || !(mention.options || []).length) return;
       if (event.key === 'Escape') {
         event.preventDefault();
+        event.stopPropagation();
         state.commentMention = null;
         render();
         return;

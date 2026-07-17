@@ -25,7 +25,7 @@ test('filters use progressive controls and a flexible bar', () => {
 
 test('kanban actions share the filter row and gantt scale uses a stepper', () => {
   assert.match(views, /function renderFilterViewActions\(\)/);
-  assert.match(views, /<section class=\"view kanban-view\">/);
+  assert.match(views, /<section class=\"view kanban-view /);
   assert.match(views, /class=\"gantt-scale-stepper\"/);
   assert.doesNotMatch(views, /class=\"gantt-scale-steps\"/);
 });
@@ -42,7 +42,8 @@ test('list inline pickers escape the scroll container through a viewport portal'
   assert.match(views, /mountInlineDropdownPortal\(\)/);
   assert.match(bindings, /startsWith\('inline:'\)/);
   assert.match(bindings, /availableAbove > availableBelow/);
-  assert.match(bindings, /trigger\.closest\('\.table-wrap'\)/);
+  assert.match(bindings, /insideOverlay = Boolean\(dropdown\.closest\('\.modal, \.drawer'\)\)/);
+  assert.match(bindings, /document\.addEventListener\('scroll', schedulePosition, \{ capture: true, passive: true \}\)/);
   assert.match(styles, /\.dropdown-menu\.dropdown-menu-portal\s*\{[^}]*position:\s*fixed;/s);
 });
 
