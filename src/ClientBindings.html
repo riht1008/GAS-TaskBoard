@@ -647,6 +647,8 @@
       if (action === 'confirm-status-delete') return confirmStatusDelete(event.currentTarget.dataset.columnId);
       if (action === 'close-dialog') return closeDialog();
       if (action === 'close-drawer') return closeDrawer();
+      if (action === 'edit-detail-description') return startDetailDescriptionEdit();
+      if (action === 'finish-detail-description') return finishDetailDescriptionEdit();
       if (action === 'discard-detail-close') return discardDetailChangesAndClose();
       if (action === 'save-detail-close') return saveDetailChangesAndClose();
       if (action === 'save-detail') return saveDetail({ closeAfter: true });
@@ -900,6 +902,7 @@
       const target = draftForScope(scope);
       if (!target) return;
       target[field] = value;
+      if (scope === 'detail') updateDetailSaveFooter();
     }
 
     function handleDetailNameKeydown(event) {
@@ -992,6 +995,12 @@
         closeDialog();
         return;
       }
+      if (state.detailDescriptionEditing) {
+        event.preventDefault();
+        event.stopPropagation();
+        finishDetailDescriptionEdit();
+        return;
+      }
       if (state.drawerNodeId) {
         event.preventDefault();
         closeDrawer();
@@ -1023,7 +1032,7 @@
       const portalRoot = document.getElementById('dropdownPortalRoot');
       const focusable = Array.from(surface.querySelectorAll(selector))
         .concat(portalRoot ? Array.from(portalRoot.querySelectorAll(selector)) : [])
-        .filter(element => !element.hidden && element.getAttribute('aria-hidden') !== 'true');
+        .filter(element => !element.hidden && !element.closest('[hidden], [aria-hidden="true"]'));
       if (!focusable.length) {
         event.preventDefault();
         surface.focus();

@@ -608,6 +608,13 @@
       }
 
       lines.forEach((rawLine, index) => {
+        const headingMatch = rawLine.match(new RegExp('^(#{1,3})\\s+(.+)$'));
+        if (headingMatch) {
+          closeLists();
+          const level = headingMatch[1].length;
+          html += '<h' + level + '>' + formatInlineMarkdown(h(headingMatch[2]), mentionIds) + '</h' + level + '>';
+          return;
+        }
         const match = rawLine.match(new RegExp('^(\\s{0,4})([-*]|\\d+\\.)\\s+(.+)$'));
         if (!match) {
           closeLists();

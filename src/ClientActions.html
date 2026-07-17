@@ -848,6 +848,7 @@
       if (state.drawerNodeId !== nodeId) {
         state.commentReplyTo = null;
         state.commentMention = null;
+        state.detailDescriptionEditing = false;
       }
       state.drawerNodeId = nodeId;
       initializeDetailDraft(node);
@@ -873,6 +874,7 @@
       state.drawerReturnFocus = null;
       state.detailDraftNodeId = '';
       state.detailDraft = null;
+      state.detailDescriptionEditing = false;
       state.openDropdown = '';
       state.focusDetailName = false;
       state.commentReplyTo = null;
@@ -1119,6 +1121,34 @@
       const node = state.nodesById.get(state.drawerNodeId);
       if (!node) return false;
       return !sameDetailSnapshot(detailSnapshotFromDraft(state.detailDraft), detailSnapshotFromNode(node));
+    }
+
+    function startDetailDescriptionEdit() {
+      if (!state.currentMember || !state.drawerNodeId) return;
+      state.detailDescriptionEditing = true;
+      render();
+      requestAnimationFrame(() => {
+        const input = document.querySelector('[data-detail-description-input]');
+        if (input) input.focus();
+      });
+    }
+
+    function finishDetailDescriptionEdit() {
+      if (!state.detailDescriptionEditing) return;
+      state.detailDescriptionEditing = false;
+      render();
+      requestAnimationFrame(() => {
+        const trigger = document.querySelector('[data-action="edit-detail-description"]');
+        if (trigger) trigger.focus();
+      });
+    }
+
+    function updateDetailSaveFooter() {
+      const footer = document.querySelector('.detail-save-footer');
+      if (!footer) return;
+      const show = Boolean(state.shellNodeId && state.shellNodeId === state.drawerNodeId) || hasUnsavedDetailDraft();
+      footer.hidden = !show;
+      footer.setAttribute('aria-hidden', show ? 'false' : 'true');
     }
 
     function focusDetailNameInput() {
