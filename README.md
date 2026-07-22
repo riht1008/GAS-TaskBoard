@@ -77,9 +77,9 @@ clasp push
 ```
 [ LANGUAGES BREAKDOWN ]
 
-HTML         --> 11,148 lines
-JavaScript   --> 7,733 lines
+HTML         --> 11,901 lines
+JavaScript   --> 8,545 lines
 
-[ TOTAL LINES OF CODE: 18,881 ]
+[ TOTAL LINES OF CODE: 20,446 ]
 ```
 <!-- LANGUAGES BREAKDOWN END -->
