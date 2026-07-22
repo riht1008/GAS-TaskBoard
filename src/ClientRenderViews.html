@@ -37,6 +37,7 @@
             <button class="sync-pill sync-${h(state.syncStatus)}" type="button" data-action="force-sync" title="${h(syncLabel())}。クリックして最新の状態を確認" aria-label="${h(syncLabel())}。クリックして最新の状態を確認">
               ${icon(syncIconName())}<span>${h(syncPillLabel())}</span>
             </button>
+            ${renderNotificationBell()}
             <button class="button ghost" data-action="members" title="${state.currentMember ? 'メンバーを管理' : 'メンバー登録後に管理できます'}" ${state.currentMember ? '' : 'disabled'}>${icon('users')}メンバー</button>
             <button class="button ghost icon" data-action="project-settings" title="プロジェクト設定" aria-label="プロジェクト設定" ${state.currentMember ? '' : 'disabled'}>${icon('settings')}</button>
             <button class="button secondary" data-action="confirm-export-wbs" title="${h(wbsTitle)}" aria-label="${h(wbsTitle)}" ${wbsUnavailable ? 'disabled' : ''}>${state.exportWbsSubmitting ? '<span class="btn-spinner"></span>' : icon('database')}WBSに上書き</button>
@@ -59,6 +60,68 @@
       renderToasts();
       restorePreservedScrollPositions(document, preservedScroll);
       flushPendingNodeScroll();
+      flushPendingCommentScroll();
+    }
+
+    function renderNotificationBell() {
+      const unreadCount = Math.max(0, Number(state.notificationUnreadCount) || 0);
+      const badgeLabel = unreadCount > 99 ? '99+' : String(unreadCount);
+      const label = unreadCount ? `通知 ${unreadCount}件未読` : '通知';
+      return `
+        <div class="notification-anchor" data-notification-surface>
+          <button class="button ghost icon notification-bell" type="button" data-action="toggle-notifications" title="${h(label)}" aria-label="${h(label)}" aria-expanded="${state.notificationInboxOpen}">
+            ${icon('bell')}
+            ${unreadCount ? `<span class="notification-badge" aria-hidden="true">${h(badgeLabel)}</span>` : ''}
+          </button>
+          ${state.notificationInboxOpen ? renderNotificationInbox() : ''}
+        </div>
+      `;
+    }
+
+    function renderNotificationInbox() {
+      const unreadCount = Math.max(0, Number(state.notificationUnreadCount) || 0);
+      return `
+        <section class="notification-popover" role="dialog" aria-modal="false" aria-labelledby="notificationInboxTitle">
+          <header class="notification-popover-head">
+            <div>
+              <h2 id="notificationInboxTitle">通知</h2>
+              <span>${unreadCount ? `未読 ${unreadCount}件` : '未読はありません'}${state.notificationRefreshing ? ' ・ 更新中' : ''}</span>
+            </div>
+            <button class="button ghost compact" type="button" data-action="mark-all-notifications-read" ${!unreadCount || state.notificationMarkingAll ? 'disabled' : ''}>
+              ${state.notificationMarkingAll ? '<span class="btn-spinner"></span>' : icon('check')}一括既読
+            </button>
+          </header>
+          <div class="notification-list" data-preserve-scroll="notification:list">
+            ${state.notificationLoading ? `
+              <div class="notification-loading"><span class="spinner"></span><span>通知を読み込んでいます</span></div>
+            ` : state.notifications.length ? `
+              ${state.notifications.map(renderNotificationCard).join('')}
+              ${state.notificationPage.hasMore ? `<button class="button secondary compact notification-load-more" type="button" data-action="load-more-notifications" ${state.notificationLoadingMore ? 'disabled' : ''}>${state.notificationLoadingMore ? '<span class="btn-spinner"></span>' : ''}さらに読み込む</button>` : ''}
+            ` : `
+              <div class="notification-empty">${icon('bell')}<strong>通知はありません</strong><span>自分宛のコメントメンションがここに表示されます。</span></div>
+            `}
+          </div>
+        </section>
+      `;
+    }
+
+    function renderNotificationCard(notification) {
+      const unread = notification.unread === true;
+      const menuOpen = state.notificationMenuId === notification.id;
+      const location = [notification.parentPath, notification.nodeName].filter(Boolean).join(' > ') || notification.nodeName || 'タスク';
+      return `
+        <article class="notification-card ${unread ? 'unread' : 'read'}">
+          <button class="notification-card-main" type="button" data-action="open-notification" data-notification-id="${h(notification.id)}" data-node-id="${h(notification.nodeId)}" data-comment-id="${h(notification.commentId)}">
+            <span class="notification-card-meta"><span class="notification-unread-dot" aria-hidden="true"></span><strong>${h(notification.authorName || '不明')}さんからのメンション</strong><time>${h(formatDateTime(notification.timestamp))}</time></span>
+            <span class="notification-card-location">${h(location)}</span>
+            <span class="notification-card-text">${h(notification.text || '')}</span>
+          </button>
+          ${unread ? `
+            <button class="notification-more" type="button" data-action="toggle-notification-menu" data-notification-id="${h(notification.id)}" aria-label="通知メニュー" aria-expanded="${menuOpen}">${icon('more-horizontal')}</button>
+            ${menuOpen ? `<div class="notification-card-menu"><button type="button" data-action="mark-notification-read" data-notification-id="${h(notification.id)}">${icon('check')}既読にする</button></div>` : ''}
+          ` : ''}
+        </article>
+      `;
     }
 
     function finishDeferredRender() {
@@ -956,11 +1019,10 @@
     }
 
     function renderGanttBar(node, index, scale, topOffset) {
-      const start = node.displayStartDate;
-      const end = node.displayEndDate;
-      if (!start || !end) return '';
-      const left = (dateToDay(start) - scale.startDay) * scale.dayWidth;
-      const width = Math.max(24, (dateToDay(end) - dateToDay(start) + 1) * scale.dayWidth);
+      const geometry = ganttBarGeometry(node, scale);
+      if (!geometry) return '';
+      const left = geometry.left;
+      const width = geometry.width;
       const canDrag = Boolean(state.currentMember && node.startDate && node.endDate);
       const barColor = statusColor(node.statusColumnId);
       const top = (Number(topOffset) || 0) + index * GANTT_ROW_HEIGHT + 8;
@@ -975,30 +1037,121 @@
       `;
     }
 
-    function renderGanttArrows(displayRows, scale, height, topOffset) {
+    function ganttBarGeometry(node, scale) {
+      if (!node || !node.displayStartDate || !node.displayEndDate) return null;
+      const startDay = dateToDay(node.displayStartDate);
+      const endDay = dateToDay(node.displayEndDate);
+      if (!Number.isFinite(startDay) || !Number.isFinite(endDay)) return null;
+      const left = (startDay - scale.startDay) * scale.dayWidth;
+      const width = Math.max(24, (endDay - startDay + 1) * scale.dayWidth);
+      return { left, width, right: left + width };
+    }
+
+    function ganttPortOffset(index, count) {
+      if (count <= 1) return 0;
+      const span = Math.min(12, (count - 1) * 4);
+      return -span / 2 + span * index / (count - 1);
+    }
+
+    function ganttDependencyRoutes(displayRows, scale, topOffset) {
       topOffset = Number(topOffset) || 0;
       const rowIndex = new Map();
       displayRows.forEach((node, index) => rowIndex.set(node.id, index));
       const visible = new Set(Array.from(rowIndex.keys()));
-      const paths = [];
+      const grouped = new Map();
+
       state.dependencies.forEach(dep => {
         const fromId = visibleAnchor(dep.predecessorId, visible);
         const toId = visibleAnchor(dep.successorId, visible);
+        if (fromId === toId) return;
         const from = state.nodesById.get(fromId);
         const to = state.nodesById.get(toId);
-        if (!from || !to || !from.displayEndDate || !to.displayStartDate || !rowIndex.has(fromId) || !rowIndex.has(toId)) return;
-        const x1 = (dateToDay(from.displayEndDate) - scale.startDay + 1) * scale.dayWidth + 2;
-        const x2 = (dateToDay(to.displayStartDate) - scale.startDay) * scale.dayWidth - 2;
-        const y1 = topOffset + rowIndex.get(fromId) * GANTT_ROW_HEIGHT + 20;
-        const y2 = topOffset + rowIndex.get(toId) * GANTT_ROW_HEIGHT + 20;
-        const mid = Math.max(x1 + 16, (x1 + x2) / 2);
-        paths.push(`<path d="M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}" fill="none" stroke="var(--color-text-tertiary)" stroke-width="1.5" marker-end="url(#arrow)"></path>`);
+        const fromGeometry = ganttBarGeometry(from, scale);
+        const toGeometry = ganttBarGeometry(to, scale);
+        if (!fromGeometry || !toGeometry || !rowIndex.has(fromId) || !rowIndex.has(toId)) return;
+        const key = `${fromId}->${toId}`;
+        const existing = grouped.get(key);
+        if (existing) {
+          existing.count += 1;
+          return;
+        }
+        grouped.set(key, {
+          key,
+          count: 1,
+          fromId,
+          toId,
+          fromIndex: rowIndex.get(fromId),
+          toIndex: rowIndex.get(toId),
+          fromGeometry,
+          toGeometry
+        });
       });
+
+      const routes = Array.from(grouped.values()).sort((left, right) =>
+        left.fromIndex - right.fromIndex || left.toIndex - right.toIndex || left.key.localeCompare(right.key)
+      );
+      const outgoing = new Map();
+      const incoming = new Map();
+      routes.forEach(route => {
+        if (!outgoing.has(route.fromId)) outgoing.set(route.fromId, []);
+        if (!incoming.has(route.toId)) incoming.set(route.toId, []);
+        outgoing.get(route.fromId).push(route);
+        incoming.get(route.toId).push(route);
+      });
+      outgoing.forEach(group => group.sort((left, right) => left.toIndex - right.toIndex || left.key.localeCompare(right.key)));
+      incoming.forEach(group => group.sort((left, right) => left.fromIndex - right.fromIndex || left.key.localeCompare(right.key)));
+
+      const lanes = [];
+      routes.forEach(route => {
+        const outgoingGroup = outgoing.get(route.fromId);
+        const incomingGroup = incoming.get(route.toId);
+        const outgoingIndex = outgoingGroup.indexOf(route);
+        const incomingIndex = incomingGroup.indexOf(route);
+        const minRow = Math.min(route.fromIndex, route.toIndex);
+        const maxRow = Math.max(route.fromIndex, route.toIndex);
+        let obstacleRight = Math.max(route.fromGeometry.right, route.toGeometry.right);
+        for (let index = minRow; index <= maxRow; index += 1) {
+          const geometry = ganttBarGeometry(displayRows[index], scale);
+          if (geometry) obstacleRight = Math.max(obstacleRight, geometry.right);
+        }
+
+        let lane = lanes.findIndex(intervals => !intervals.some(interval => interval.minRow <= maxRow && minRow <= interval.maxRow));
+        if (lane < 0) {
+          lane = lanes.length;
+          lanes.push([]);
+        }
+        lanes[lane].push({ minRow, maxRow });
+
+        const direction = route.toIndex > route.fromIndex ? 1 : -1;
+        const fromY = topOffset + route.fromIndex * GANTT_ROW_HEIGHT + GANTT_ROW_HEIGHT / 2
+          + ganttPortOffset(outgoingIndex, outgoingGroup.length);
+        const targetCenterY = topOffset + route.toIndex * GANTT_ROW_HEIGHT + GANTT_ROW_HEIGHT / 2;
+        const toY = targetCenterY
+          + ganttPortOffset(incomingIndex, incomingGroup.length);
+        const fromX = route.fromGeometry.right + 3;
+        const toX = route.toGeometry.left - 3;
+        const channelX = Math.max(obstacleRight + 10, fromX + 10, toX + 10) + Math.min(lane, 12) * 7;
+        const corridorY = targetCenterY - direction * 16;
+        const approachX = toX - 10 - incomingIndex * 4;
+        route.path = `M ${fromX} ${fromY} H ${channelX} V ${corridorY} H ${approachX} V ${toY} H ${toX}`;
+        route.lane = lane;
+      });
+      return routes;
+    }
+
+    function renderGanttArrows(displayRows, scale, height, topOffset) {
+      const routes = ganttDependencyRoutes(displayRows, scale, topOffset);
+      const paths = routes.map(route => `
+        <g class="gantt-dependency ${route.count > 1 ? 'grouped' : ''}" data-dependency-count="${route.count}">
+          <path class="gantt-dependency-halo" d="${route.path}"></path>
+          <path class="gantt-dependency-path" d="${route.path}" marker-end="url(#gantt-arrowhead)"></path>
+        </g>
+      `);
       return `
         <svg class="gantt-arrows" width="${scale.width}" height="${height}">
           <defs>
-            <marker id="arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
-              <path d="M0,0 L7,3.5 L0,7 Z" fill="var(--color-text-tertiary)"></path>
+            <marker id="gantt-arrowhead" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto" markerUnits="strokeWidth">
+              <path d="M0,0 L7,3.5 L0,7 Z" class="gantt-dependency-arrowhead"></path>
             </marker>
           </defs>
           ${paths.join('')}

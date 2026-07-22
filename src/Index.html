@@ -20,6 +20,8 @@
 
   <script>
 window.__TASKBOARD_BOOTSTRAP_EMAIL__ = <?!= JSON.stringify(bootstrapEmail || '') ?>;
+window.__TASKBOARD_BOOTSTRAP_NODE_ID__ = <?!= JSON.stringify(bootstrapNodeId || '') ?>;
+window.__TASKBOARD_BOOTSTRAP_COMMENT_ID__ = <?!= JSON.stringify(bootstrapCommentId || '') ?>;
 <?!= include('ClientState'); ?>
 <?!= include('ClientDataSync'); ?>
 <?!= include('ClientRenderViews'); ?>

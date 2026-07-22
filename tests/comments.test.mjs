@@ -5,7 +5,7 @@ import test from 'node:test';
 global.cleanString_ = value => value === null || value === undefined ? '' : String(value).trim();
 
 const require = createRequire(import.meta.url);
-const { addComment, commentPage_, getComments, upsertMember } = require('../src/02_CollaborationApi.js');
+const { addComment, commentPage_, getComments, getCommentThread, upsertMember } = require('../src/02_CollaborationApi.js');
 
 test('member updates reject a Slack member ID already linked to someone else', () => {
   const members = [
@@ -101,6 +101,33 @@ test('getComments hydrates only the selected page bodies after reading the light
   assert.equal(hydratedRows.length, 10);
   assert.equal(page.hasMore, true);
   assert.ok(page.comments.every(comment => comment.text.startsWith('本文')));
+});
+
+test('getCommentThread hydrates an exact old comment thread for deep links', () => {
+  const index = [
+    { __row: 2, CommentId: 'p1', NodeId: 'n1', Timestamp: '2026-07-01T00:00:00.000Z', ParentCommentId: '' },
+    { __row: 3, CommentId: 'r1', NodeId: 'n1', Timestamp: '2026-07-02T00:00:00.000Z', ParentCommentId: 'p1' },
+    { __row: 4, CommentId: 'r2', NodeId: 'n1', Timestamp: '2026-07-03T00:00:00.000Z', ParentCommentId: 'p1' },
+    { __row: 5, CommentId: 'p2', NodeId: 'n1', Timestamp: '2026-07-04T00:00:00.000Z', ParentCommentId: '' }
+  ];
+  global.SHEET = { COMMENTS: 'Comments' };
+  global.requireSchemaExists_ = () => {};
+  global.readCommentSnapshot_ = () => ({ nodes: [{ NodeId: 'n1' }], comments: index });
+  global.activeNodes_ = nodes => nodes;
+  global.byId_ = (items, key) => Object.fromEntries(items.map(item => [item[key], item]));
+  global.readObjectsAtRows_ = (_sheet, rows) => index.filter(item => rows.includes(item.__row)).map(item => ({
+    ...item,
+    AuthorId: 'm1',
+    AuthorName: '投稿者',
+    Text: item.CommentId,
+    Mentions: ''
+  }));
+  global.clientComment_ = comment => ({ id: comment.CommentId, parentCommentId: comment.ParentCommentId });
+  global.appError_ = (_code, message) => new Error(message);
+
+  const result = getCommentThread({ nodeId: 'n1', commentId: 'r1' });
+
+  assert.deepEqual(result.comments.map(comment => comment.id), ['p1', 'r1', 'r2']);
 });
 
 test('addComment posts one mention notification after releasing the sheet lock', () => {

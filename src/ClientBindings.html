@@ -564,6 +564,7 @@
     function handleActionClick(event) {
       const action = event.currentTarget.dataset.action;
       if (action && action.startsWith('calendar-')) event.stopPropagation();
+      if (action && action.includes('notification')) event.stopPropagation();
       if (action === 'reload' || action === 'force-sync') return syncFromServer({ force: true });
       if (action === 'create-child-shell') {
         removeCreatePreview();
@@ -631,6 +632,12 @@
         return;
       }
       if (action === 'members') return openMembersDialog();
+      if (action === 'toggle-notifications') return toggleNotificationInbox();
+      if (action === 'toggle-notification-menu') return toggleNotificationMenu(event.currentTarget.dataset.notificationId);
+      if (action === 'mark-notification-read') return markNotificationReadFromInbox(event.currentTarget.dataset.notificationId);
+      if (action === 'mark-all-notifications-read') return markAllNotificationsReadFromInbox();
+      if (action === 'load-more-notifications') return loadNotifications(false);
+      if (action === 'open-notification') return openNotificationFromInbox(event.currentTarget.dataset.notificationId);
       if (action === 'project-settings') return openProjectSettingsDialog(event.currentTarget.dataset.tab);
       if (action === 'project-settings-tab') return switchProjectSettingsTab(event.currentTarget.dataset.tab);
       if (action === 'set-slack-delivery-mode') return setSlackDeliveryMode(event.currentTarget.dataset.mode);
@@ -998,6 +1005,13 @@
         event.preventDefault();
         event.stopPropagation();
         closeOpenDropdownAndRestoreFocus_();
+        return;
+      }
+      if (state.notificationInboxOpen) {
+        event.preventDefault();
+        state.notificationInboxOpen = false;
+        state.notificationMenuId = '';
+        render();
         return;
       }
       if (state.dialog) {

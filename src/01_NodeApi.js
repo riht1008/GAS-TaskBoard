@@ -4,7 +4,8 @@
 
 function addNode(payload) {
   payload = payload || {};
-  return withLock_(function () {
+  let assignmentNotification = null;
+  const result = withLock_(function () {
     requireSchemaExists_();
     const rows = readNodeSnapshot_();
     const actor = requireCurrentMember_(rows.members);
@@ -79,13 +80,31 @@ function addNode(payload) {
       freshRows = readNodeSnapshot_();
     }
     const affectedIds = unique_([nodeId, parentId].concat(rollupIds).concat(ancestorIdsForMany_([nodeId, parentId].concat(rollupIds), activeNodes_(freshRows.nodes))));
+    const assignedIds = splitCsv_(node.AssigneeIds).filter(function (id) { return id !== cleanString_(actor.MemberId); });
+    if (assignedIds.length) {
+      try {
+        const assignedSet = {};
+        assignedIds.forEach(function (id) { assignedSet[id] = true; });
+        const assignedMembers = freshRows.members.filter(function (member) { return !!assignedSet[cleanString_(member.MemberId)]; });
+        const freshNode = byId_(activeNodes_(freshRows.nodes), 'NodeId')[nodeId] || node;
+        assignmentNotification = buildAssignmentNotification_(freshNode, actor, assignedMembers, freshRows);
+      } catch (error) {
+        assignmentNotification = null;
+      }
+    }
     return makeMutationPayload_(freshRows, affectedIds, payload.requestId, { createdNodeId: nodeId });
   });
+  if (assignmentNotification) {
+    postToSlack_(assignmentNotification, { type: 'assignment' });
+    attachPublicSlackSettings_(result);
+  }
+  return result;
 }
 
 function saveNode(payload) {
   payload = payload || {};
   let statusNotification = null;
+  let assignmentNotification = null;
   const result = withLock_(function () {
     requireSchemaExists_();
     const requestId = cleanString_(payload.requestId);
@@ -110,6 +129,7 @@ function saveNode(payload) {
     const beforeActualStart = cleanString_(node.ActualStartDate);
     const beforeActualEnd = cleanString_(node.ActualEndDate);
     const beforeStatus = cleanString_(node.StatusColumnId);
+    const beforeAssigneeIds = splitCsv_(node.AssigneeIds);
     const doneColumnId = doneStatusColumnId_(rows.statusColumns);
     const beforeProgress = effectiveLeafProgress_(node, doneColumnId);
     const nodeHadChildren = (childrenMap_(active)[node.NodeId] || []).length > 0;
@@ -167,6 +187,21 @@ function saveNode(payload) {
         statusNotification = null;
       }
     }
+    const afterAssigneeIds = splitCsv_(node.AssigneeIds);
+    const addedAssigneeIds = afterAssigneeIds.filter(function (id) {
+      return beforeAssigneeIds.indexOf(id) === -1 && id !== cleanString_(actor.MemberId);
+    });
+    if (addedAssigneeIds.length) {
+      try {
+        const addedSet = {};
+        addedAssigneeIds.forEach(function (id) { addedSet[id] = true; });
+        const assignedMembers = rows.members.filter(function (member) { return !!addedSet[cleanString_(member.MemberId)]; });
+        const afterNode = byId_(activeNodes_(rows.nodes), 'NodeId')[node.NodeId] || node;
+        assignmentNotification = buildAssignmentNotification_(afterNode, actor, assignedMembers, rows);
+      } catch (error) {
+        assignmentNotification = null;
+      }
+    }
     return makeMutationPayload_(rows, affectedIds, requestId, {
       rescheduledCount: rescheduleResult.shiftedIds.filter(function (id) { return id !== node.NodeId; }).length,
       statusChanged: statusChanged,
@@ -175,6 +210,10 @@ function saveNode(payload) {
   });
   if (statusNotification) {
     postToSlack_(statusNotification, { type: 'status' });
+    attachPublicSlackSettings_(result);
+  }
+  if (assignmentNotification) {
+    postToSlack_(assignmentNotification, { type: 'assignment' });
     attachPublicSlackSettings_(result);
   }
   return result;

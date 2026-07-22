@@ -5,7 +5,7 @@ import test from 'node:test';
 import vm from 'node:vm';
 
 const require = createRequire(import.meta.url);
-const { SLACK_DEFAULT_STATUS_TEMPLATE, SLACK_DEFAULT_MENTION_TEMPLATE } = require('../src/09_Notifications.js');
+const { SLACK_DEFAULT_STATUS_TEMPLATE, SLACK_DEFAULT_MENTION_TEMPLATE, SLACK_DEFAULT_ASSIGNMENT_TEMPLATE } = require('../src/09_Notifications.js');
 
 const actionsSource = fs.readFileSync(new URL('../src/ClientActions.html', import.meta.url), 'utf8');
 const bindingsSource = fs.readFileSync(new URL('../src/ClientBindings.html', import.meta.url), 'utf8');
@@ -47,14 +47,19 @@ test('Slack connection test is queued behind settings saves', () => {
 test('Slack settings expose independent notification choices and editable default templates', () => {
   assert.match(stateSource, /SLACK_DEFAULT_STATUS_TEMPLATE/);
   assert.match(stateSource, /SLACK_DEFAULT_MENTION_TEMPLATE/);
+  assert.match(stateSource, /SLACK_DEFAULT_ASSIGNMENT_TEMPLATE/);
   assert.match(actionsSource, /mentionEnabled: draft\.mentionEnabled === true/);
+  assert.match(actionsSource, /assignmentEnabled: draft\.assignmentEnabled === true/);
   assert.match(actionsSource, /statusTemplate: cleanText\(draft\.statusTemplate\)/);
   assert.match(actionsSource, /mentionTemplate: cleanText\(draft\.mentionTemplate\)/);
+  assert.match(actionsSource, /assignmentTemplate: cleanText\(draft\.assignmentTemplate\)/);
   assert.match(bindingsSource, /action === 'reset-slack-template'/);
   assert.match(bindingsSource, /action === 'set-slack-delivery-mode'/);
   assert.match(panelsSource, /data-draft-field="mentionEnabled"/);
+  assert.match(panelsSource, /data-draft-field="assignmentEnabled"/);
   assert.match(panelsSource, /data-draft-field="statusTemplate"/);
   assert.match(panelsSource, /data-draft-field="mentionTemplate"/);
+  assert.match(panelsSource, /data-draft-field="assignmentTemplate"/);
   assert.match(panelsSource, /hooks\.slack\.com\/triggers/);
   assert.match(panelsSource, /project-settings-nav/);
   assert.match(panelsSource, /slack-mode-card/);
@@ -69,7 +74,8 @@ test('Slack settings expose independent notification choices and editable defaul
 test('client and server use the same Slack default templates', () => {
   const constantsSource = stateSource.slice(0, stateSource.indexOf('    const state ='));
   const context = vm.createContext({});
-  vm.runInContext(constantsSource + '\nthis.templates = { status: SLACK_DEFAULT_STATUS_TEMPLATE, mention: SLACK_DEFAULT_MENTION_TEMPLATE };', context);
+  vm.runInContext(constantsSource + '\nthis.templates = { status: SLACK_DEFAULT_STATUS_TEMPLATE, mention: SLACK_DEFAULT_MENTION_TEMPLATE, assignment: SLACK_DEFAULT_ASSIGNMENT_TEMPLATE };', context);
   assert.equal(context.templates.status, SLACK_DEFAULT_STATUS_TEMPLATE);
   assert.equal(context.templates.mention, SLACK_DEFAULT_MENTION_TEMPLATE);
+  assert.equal(context.templates.assignment, SLACK_DEFAULT_ASSIGNMENT_TEMPLATE);
 });

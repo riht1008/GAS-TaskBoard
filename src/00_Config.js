@@ -2,7 +2,7 @@
  * Shared configuration and sheet schema.
  */
 
-var APP_VERSION = '1.7.0';
+var APP_VERSION = '1.9.1';
 var LOCK_WAIT_MS = 15000;
 var DAY_MS = 24 * 60 * 60 * 1000;
 var DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
@@ -19,7 +19,8 @@ var SHEET = {
   ACTIVITY_LOG: 'ActivityLog',
   MILESTONES: 'Milestones',
   MEETINGS: 'Meetings',
-  CALENDAR_OVERRIDES: 'CalendarOverrides'
+  CALENDAR_OVERRIDES: 'CalendarOverrides',
+  NOTIFICATION_READS: 'NotificationReads'
 };
 
 var HEADERS = {};
@@ -57,6 +58,7 @@ HEADERS[SHEET.ACTIVITY_LOG] = ['LogId', 'NodeId', 'Field', 'OldValue', 'NewValue
 HEADERS[SHEET.MILESTONES] = ['MilestoneId', 'Name', 'Date', 'Note', 'SortOrder'];
 HEADERS[SHEET.MEETINGS] = ['MeetingId', 'Name', 'Schedule', 'Note', 'SortOrder', 'ScheduleRuleJson', 'StartDate', 'EndDate'];
 HEADERS[SHEET.CALENDAR_OVERRIDES] = ['Date', 'DayType', 'Name'];
+HEADERS[SHEET.NOTIFICATION_READS] = ['NotificationKey', 'RecipientMemberId', 'NotificationType', 'SourceId', 'ReadAt'];
 
 var PRIMARY_KEY_HEADER = {};
 PRIMARY_KEY_HEADER[SHEET.NODES] = 'NodeId';
@@ -68,6 +70,7 @@ PRIMARY_KEY_HEADER[SHEET.ACTIVITY_LOG] = 'LogId';
 PRIMARY_KEY_HEADER[SHEET.MILESTONES] = 'MilestoneId';
 PRIMARY_KEY_HEADER[SHEET.MEETINGS] = 'MeetingId';
 PRIMARY_KEY_HEADER[SHEET.CALENDAR_OVERRIDES] = 'Date';
+PRIMARY_KEY_HEADER[SHEET.NOTIFICATION_READS] = 'NotificationKey';
 
 var TEXT_COLUMNS = {};
 TEXT_COLUMNS[SHEET.NODES] = [
@@ -101,6 +104,7 @@ TEXT_COLUMNS[SHEET.ACTIVITY_LOG] = ['LogId', 'NodeId', 'Field', 'OldValue', 'New
 TEXT_COLUMNS[SHEET.MILESTONES] = ['MilestoneId', 'Name', 'Date', 'Note'];
 TEXT_COLUMNS[SHEET.MEETINGS] = ['MeetingId', 'Name', 'Schedule', 'Note', 'ScheduleRuleJson', 'StartDate', 'EndDate'];
 TEXT_COLUMNS[SHEET.CALENDAR_OVERRIDES] = ['Date', 'DayType', 'Name'];
+TEXT_COLUMNS[SHEET.NOTIFICATION_READS] = ['NotificationKey', 'RecipientMemberId', 'NotificationType', 'SourceId', 'ReadAt'];
 
 var PRIORITIES = ['High', 'Mid', 'Low'];
 var PROGRESS_VALUES = [0, 15, 30, 45, 60, 75, 90, 100];

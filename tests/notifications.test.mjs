@@ -9,8 +9,11 @@ const require = createRequire(import.meta.url);
 const {
   SLACK_DEFAULT_STATUS_TEMPLATE,
   SLACK_DEFAULT_MENTION_TEMPLATE,
+  SLACK_DEFAULT_ASSIGNMENT_TEMPLATE,
   SLACK_STATUS_TEMPLATE_KEYS,
   SLACK_MENTION_TEMPLATE_KEYS,
+  SLACK_ASSIGNMENT_TEMPLATE_KEYS,
+  webAppUrlForNode_,
   slackMentionedUsers_,
   slackWebhookType_,
   slackRequestPayload_,
@@ -23,6 +26,21 @@ const {
   slackNotificationEnabled_,
   slackDeliveryErrorMessage_
 } = require('../src/09_Notifications.js');
+
+test('Slack task links open the exact task and optional comment', () => {
+  global.ScriptApp = {
+    getService: () => ({ getUrl: () => 'https://script.google.test/macros/s/example/exec' })
+  };
+
+  assert.equal(
+    webAppUrlForNode_('node-1'),
+    'https://script.google.test/macros/s/example/exec?node=node-1'
+  );
+  assert.equal(
+    webAppUrlForNode_('node 1', 'comment/1'),
+    'https://script.google.test/macros/s/example/exec?node=node%201&comment=comment%2F1'
+  );
+});
 
 test('Slack delivery errors are translated into actionable messages', () => {
   assert.match(slackDeliveryErrorMessage_(404, ''), /削除または無効/);
@@ -53,6 +71,18 @@ test('Slack templates provide defaults and interpolate only supported placeholde
   }, SLACK_DEFAULT_MENTION_TEMPLATE, SLACK_MENTION_TEMPLATE_KEYS);
   assert.match(mention, /<@U012AB3CD>, 佐藤/);
   assert.match(mention, /&lt;!channel&gt;/);
+
+  const assignment = renderSlackTemplate_(SLACK_DEFAULT_ASSIGNMENT_TEMPLATE, {
+    taskName: '実装',
+    parentPath: '案件',
+    assignedUsers: '<@U012AB3CD>',
+    assignedNames: '田中',
+    actorName: '鈴木',
+    endDate: '2026-07-31',
+    webAppUrl: 'https://example.test/app'
+  }, SLACK_DEFAULT_ASSIGNMENT_TEMPLATE, SLACK_ASSIGNMENT_TEMPLATE_KEYS);
+  assert.match(assignment, /<@U012AB3CD>/);
+  assert.match(assignment, /2026-07-31/);
 });
 
 test('Slack mention labels notify mapped users and safely fall back to names', () => {
@@ -124,6 +154,27 @@ test('Workflow Builder receives flat variables and one mention request per Slack
   assert.equal(mentionPayloads[1].mentioned_user_id, 'W987XYZ');
   assert.equal(mentionPayloads[0].comment_text, '&lt;!channel&gt; お願いします');
   assert.deepEqual(slackWorkflowRequestPayloads_({ text: '旧形式' }, 'status', true), [{ text: '旧形式' }]);
+
+  const assignmentPayloads = slackWorkflowRequestPayloads_({
+    workflow: {
+      type: 'assignment',
+      fields: {
+        notification_title: 'アサイン',
+        task_name: '実装',
+        parent_path: '案件',
+        actor_name: '鈴木',
+        end_date: '2026-07-31',
+        web_app_url: 'https://example.test/app'
+      },
+      recipients: [
+        { slackUserId: 'U012ABC', name: '田中' },
+        { slackUserId: 'W987XYZ', name: '佐藤' }
+      ]
+    }
+  }, 'assignment', false);
+  assert.equal(assignmentPayloads.length, 2);
+  assert.equal(assignmentPayloads[0].assigned_user_id, 'U012ABC');
+  assert.equal(assignmentPayloads[1].assigned_user_name, '佐藤');
 });
 
 test('Slack settings reject unknown template placeholders', () => {
@@ -135,10 +186,11 @@ test('Slack settings reject unknown template placeholders', () => {
   ), /未対応/);
 });
 
-test('Slack notification choices independently control status and mention delivery', () => {
-  const settings = { statusChangeEnabled: true, mentionEnabled: false };
+test('Slack notification choices independently control status, mention, and assignment delivery', () => {
+  const settings = { statusChangeEnabled: true, mentionEnabled: false, assignmentEnabled: true };
   assert.equal(slackNotificationEnabled_(settings, { type: 'status' }), true);
   assert.equal(slackNotificationEnabled_(settings, { type: 'mention' }), false);
+  assert.equal(slackNotificationEnabled_(settings, { type: 'assignment' }), true);
   assert.equal(slackNotificationEnabled_(settings, { type: 'mention', force: true }), true);
 });
 
@@ -157,6 +209,7 @@ test('Slack settings persist independent choices and editable templates with leg
   const initial = slackNotificationSettings_();
   assert.equal(initial.statusChangeEnabled, true);
   assert.equal(initial.mentionEnabled, false);
+  assert.equal(initial.assignmentEnabled, false);
   assert.equal(initial.statusTemplate, SLACK_DEFAULT_STATUS_TEMPLATE);
   assert.equal(initial.mentionTemplate, SLACK_DEFAULT_MENTION_TEMPLATE);
 
@@ -193,12 +246,15 @@ test('Slack settings persist independent choices and editable templates with leg
     deliveryMode: 'workflow',
     workflowStatusWebhookUrl: 'https://hooks.slack.com/triggers/T/B/STATUS',
     workflowMentionWebhookUrl: 'https://hooks.slack.com/triggers/T/B/MENTION',
+    workflowAssignmentWebhookUrl: 'https://hooks.slack.com/triggers/T/B/ASSIGNMENT',
     statusChangeEnabled: true,
-    mentionEnabled: true
+    mentionEnabled: true,
+    assignmentEnabled: true
   });
   assert.equal(splitWorkflowResult.slackSettings.deliveryMode, 'workflow');
   assert.equal(splitWorkflowResult.slackSettings.workflowStatusConfigured, true);
   assert.equal(splitWorkflowResult.slackSettings.workflowMentionConfigured, true);
+  assert.equal(splitWorkflowResult.slackSettings.workflowAssignmentConfigured, true);
   assert.equal(splitWorkflowResult.slackSettings.workflowStatusLegacy, false);
   assert.equal(splitWorkflowResult.slackSettings.workflowMentionLegacy, false);
   assert.doesNotMatch(splitWorkflowResult.slackSettings.maskedWorkflowStatusWebhookUrl, /STATUS/);

@@ -16,12 +16,14 @@ test('Slack mode descriptions stay product-focused and organization-neutral', ()
 test('Workflow guidance explains exact variable order, type, insertion, and URL flow', () => {
   assert.match(panelsSource, /title: 'ステータス変更Workflow'/);
   assert.match(panelsSource, /title: 'コメントメンションWorkflow'/);
+  assert.match(panelsSource, /title: 'アサイン通知Workflow'/);
   assert.match(panelsSource, /\$\{h\(config\.title\)\}の作り方/);
   assert.match(panelsSource, /次の表の変数を上から順に追加/);
   assert.match(panelsSource, /送信処理上は順番に依存しません/);
   assert.match(panelsSource, /Slackの「変数を挿入」から同名の変数を選んでください/);
   assert.match(panelsSource, /「Slack通知設定を保存」→「接続テスト」/);
   assert.match(panelsSource, /name: 'mentioned_user_id', type: 'ユーザーID'/);
+  assert.match(panelsSource, /name: 'assigned_user_id', type: 'ユーザーID'/);
   assert.match(panelsSource, /slack-message-example/);
   assert.match(panelsSource, /Slack公式のWebhook Workflow手順を開く/);
 });

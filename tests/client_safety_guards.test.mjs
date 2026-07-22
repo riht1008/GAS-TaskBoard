@@ -39,6 +39,7 @@ test('initial server load cannot overwrite a mutation started from cached UI', a
     readLocalCache: () => ({ source: 'cache' }),
     applyFullData: data => applied.push(data.source),
     render: () => {},
+    openInitialDeepLink: () => {},
     serverCall: () => new Promise(resolve => { resolveLoad = resolve; }),
     hasPendingMutations: () => pending,
     shouldDeferFullSyncApply: () => false,

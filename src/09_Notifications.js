@@ -6,6 +6,7 @@ var SLACK_WEBHOOK_KEY = 'SLACK_WEBHOOK_URL';
 var SLACK_APP_WEBHOOK_KEY = 'SLACK_APP_WEBHOOK_URL';
 var SLACK_WORKFLOW_STATUS_WEBHOOK_KEY = 'SLACK_WORKFLOW_STATUS_WEBHOOK_URL';
 var SLACK_WORKFLOW_MENTION_WEBHOOK_KEY = 'SLACK_WORKFLOW_MENTION_WEBHOOK_URL';
+var SLACK_WORKFLOW_ASSIGNMENT_WEBHOOK_KEY = 'SLACK_WORKFLOW_ASSIGNMENT_WEBHOOK_URL';
 var SLACK_SETTINGS_KEY = 'SLACK_NOTIFICATION_SETTINGS';
 var SLACK_DELIVERY_KEY = 'SLACK_DELIVERY_STATUS';
 var SLACK_TEMPLATE_MAX_LENGTH = 2000;
@@ -14,6 +15,7 @@ var SLACK_COMMENT_EXCERPT_MAX_LENGTH = 1200;
 var SLACK_WORKFLOW_MENTION_MAX_DELIVERIES = 20;
 var SLACK_STATUS_TEMPLATE_KEYS = ['taskName', 'parentPath', 'beforeStatus', 'afterStatus', 'actorName', 'webAppUrl'];
 var SLACK_MENTION_TEMPLATE_KEYS = ['taskName', 'parentPath', 'mentionedUsers', 'mentionedNames', 'actorName', 'commentText', 'webAppUrl'];
+var SLACK_ASSIGNMENT_TEMPLATE_KEYS = ['taskName', 'parentPath', 'assignedUsers', 'assignedNames', 'actorName', 'endDate', 'webAppUrl'];
 var SLACK_DEFAULT_STATUS_TEMPLATE = [
   '*タスクのステータスが変更されました*',
   '*タスク*: {taskName}',
@@ -32,13 +34,22 @@ var SLACK_DEFAULT_MENTION_TEMPLATE = [
   '{commentText}',
   '*Webアプリ*: {webAppUrl}'
 ].join('\n');
+var SLACK_DEFAULT_ASSIGNMENT_TEMPLATE = [
+  '*タスクの担当に追加されました*',
+  '*タスク*: {taskName}',
+  '*親パス*: {parentPath}',
+  '*追加担当者*: {assignedUsers}',
+  '*期限*: {endDate}',
+  '*実行者*: {actorName}',
+  '*Webアプリ*: {webAppUrl}'
+].join('\n');
 
 function buildStatusChangeNotification_(node, beforeColumn, afterColumn, actor, rows) {
   const beforeName = beforeColumn ? cleanString_(beforeColumn.Name) : '未設定';
   const afterName = afterColumn ? cleanString_(afterColumn.Name) : '未設定';
   const actorName = actor ? cleanString_(actor.Name) : '不明';
   const path = parentPath_(node, activeNodes_(rows.nodes));
-  const webAppUrl = webAppUrl_();
+  const webAppUrl = webAppUrlForNode_(node.NodeId);
   const settings = slackNotificationSettings_();
   const variables = {
     taskName: cleanString_(node.Name),
@@ -66,7 +77,7 @@ function buildStatusChangeNotification_(node, beforeColumn, afterColumn, actor, 
 
 function buildMentionNotification_(node, comment, actor, mentionedMembers, rows) {
   const path = parentPath_(node, activeNodes_(rows.nodes));
-  const webAppUrl = webAppUrl_();
+  const webAppUrl = webAppUrlForNode_(node.NodeId, comment.CommentId);
   const settings = slackNotificationSettings_();
   const variables = {
     taskName: cleanString_(node.Name),
@@ -100,6 +111,42 @@ function buildMentionNotification_(node, comment, actor, mentionedMembers, rows)
   return payload;
 }
 
+function buildAssignmentNotification_(node, actor, assignedMembers, rows) {
+  const path = parentPath_(node, activeNodes_(rows.nodes));
+  const webAppUrl = webAppUrlForNode_(node.NodeId);
+  const settings = slackNotificationSettings_();
+  const variables = {
+    taskName: cleanString_(node.Name),
+    parentPath: path || '-',
+    assignedUsers: slackMentionedUsers_(assignedMembers),
+    assignedNames: (assignedMembers || []).map(function (member) { return cleanString_(member.Name); }).filter(Boolean).join(', ') || '-',
+    actorName: actor ? cleanString_(actor.Name) : '不明',
+    endDate: cleanString_(node.EndDate) || '未設定',
+    webAppUrl: webAppUrl || '-'
+  };
+  const payload = buildSlackTemplatePayload_(settings.assignmentTemplate, variables, SLACK_DEFAULT_ASSIGNMENT_TEMPLATE, SLACK_ASSIGNMENT_TEMPLATE_KEYS);
+  payload.workflow = {
+    type: 'assignment',
+    fields: {
+      notification_title: 'タスクの担当に追加されました',
+      task_name: variables.taskName,
+      parent_path: variables.parentPath,
+      actor_name: variables.actorName,
+      end_date: variables.endDate,
+      web_app_url: variables.webAppUrl
+    },
+    recipients: (assignedMembers || []).map(function (member) {
+      return {
+        slackUserId: cleanString_(member.SlackUserId).toUpperCase(),
+        name: cleanString_(member.Name)
+      };
+    }).filter(function (recipient) {
+      return /^[UW][A-Z0-9]{2,31}$/.test(recipient.slackUserId);
+    })
+  };
+  return payload;
+}
+
 function buildSlackTemplatePayload_(template, variables, fallback, allowedKeys) {
   const text = renderSlackTemplate_(template, variables, fallback, allowedKeys);
   return {
@@ -116,9 +163,11 @@ function renderSlackTemplate_(template, variables, fallback, allowedKeys) {
   const values = variables || {};
   return normalized.replace(/\{([A-Za-z][A-Za-z0-9]*)\}/g, function (match, key) {
     if (!Object.prototype.hasOwnProperty.call(values, key)) return match;
-    // mentionedUsers is assembled only from validated Slack member IDs and escaped names.
-    // Escaping it again would turn <@U...> into plain text and suppress the notification.
-    return key === 'mentionedUsers' ? cleanString_(values[key]) : slackEscape_(values[key]);
+    // These values are assembled only from validated Slack member IDs and escaped names.
+    // Escaping them again would turn <@U...> into plain text and suppress the notification.
+    return key === 'mentionedUsers' || key === 'assignedUsers'
+      ? cleanString_(values[key])
+      : slackEscape_(values[key]);
   }).slice(0, SLACK_RENDERED_MESSAGE_MAX_LENGTH);
 }
 
@@ -173,7 +222,7 @@ function postToSlack_(payload, options) {
         ok: false,
         skipped: true,
         code: 'SLACK_MEMBER_MAPPING_MISSING',
-        message: 'SlackメンバーIDが設定されたメンション対象者がいないため、Workflow通知を送信しませんでした。'
+        message: 'SlackメンバーIDが設定された通知対象者がいないため、Workflow通知を送信しませんでした。'
       };
     }
     return sendSlackRequests_(endpoint, requests);
@@ -217,6 +266,7 @@ function slackEndpointFor_(properties, settings, options) {
   const appUrl = cleanString_(properties.getProperty(SLACK_APP_WEBHOOK_KEY)) || (legacyType === 'incoming' ? legacyUrl : '');
   const statusUrl = cleanString_(properties.getProperty(SLACK_WORKFLOW_STATUS_WEBHOOK_KEY)) || (legacyType === 'workflow' ? legacyUrl : '');
   const mentionUrl = cleanString_(properties.getProperty(SLACK_WORKFLOW_MENTION_WEBHOOK_KEY)) || (legacyType === 'workflow' ? legacyUrl : '');
+  const assignmentUrl = cleanString_(properties.getProperty(SLACK_WORKFLOW_ASSIGNMENT_WEBHOOK_KEY));
   const target = cleanString_(options.target);
   if (target === 'app') return { kind: 'app', url: appUrl, legacy: false };
   if (target === 'workflowStatus') {
@@ -225,9 +275,15 @@ function slackEndpointFor_(properties, settings, options) {
   if (target === 'workflowMention') {
     return { kind: 'workflow', url: mentionUrl, legacy: !properties.getProperty(SLACK_WORKFLOW_MENTION_WEBHOOK_KEY) && legacyType === 'workflow' };
   }
+  if (target === 'workflowAssignment') {
+    return { kind: 'workflow', url: assignmentUrl, legacy: false };
+  }
   if (settings.deliveryMode === 'app') return { kind: 'app', url: appUrl, legacy: false };
   if (options.type === 'mention') {
     return { kind: 'workflow', url: mentionUrl, legacy: !properties.getProperty(SLACK_WORKFLOW_MENTION_WEBHOOK_KEY) && legacyType === 'workflow' };
+  }
+  if (options.type === 'assignment') {
+    return { kind: 'workflow', url: assignmentUrl, legacy: false };
   }
   return { kind: 'workflow', url: statusUrl, legacy: !properties.getProperty(SLACK_WORKFLOW_STATUS_WEBHOOK_KEY) && legacyType === 'workflow' };
 }
@@ -250,6 +306,20 @@ function slackWorkflowRequestPayloads_(payload, type, legacy) {
       };
     });
   }
+  if (type === 'assignment' || workflow.type === 'assignment') {
+    return (workflow.recipients || []).slice(0, SLACK_WORKFLOW_MENTION_MAX_DELIVERIES).map(function (recipient) {
+      return {
+        notification_title: slackEscape_(fields.notification_title),
+        task_name: slackEscape_(fields.task_name),
+        parent_path: slackEscape_(fields.parent_path),
+        assigned_user_id: cleanString_(recipient.slackUserId),
+        assigned_user_name: slackEscape_(recipient.name),
+        actor_name: slackEscape_(fields.actor_name),
+        end_date: slackEscape_(fields.end_date),
+        web_app_url: slackEscape_(fields.web_app_url)
+      };
+    });
+  }
   return [{
     notification_title: slackEscape_(fields.notification_title),
     task_name: slackEscape_(fields.task_name),
@@ -264,8 +334,10 @@ function slackWorkflowRequestPayloads_(payload, type, legacy) {
 function slackNotificationEnabled_(settings, options) {
   settings = settings || {};
   options = options || {};
-  return options.force === true
-    || (options.type === 'mention' ? settings.mentionEnabled === true : settings.statusChangeEnabled !== false);
+  if (options.force === true) return true;
+  if (options.type === 'mention') return settings.mentionEnabled === true;
+  if (options.type === 'assignment') return settings.assignmentEnabled === true;
+  return settings.statusChangeEnabled !== false;
 }
 
 function getSlackSettings() {
@@ -285,6 +357,7 @@ function saveSlackSettings(payload) {
     let appWebhookUrl = cleanString_(payload.appWebhookUrl);
     let workflowStatusWebhookUrl = cleanString_(payload.workflowStatusWebhookUrl);
     let workflowMentionWebhookUrl = cleanString_(payload.workflowMentionWebhookUrl);
+    let workflowAssignmentWebhookUrl = cleanString_(payload.workflowAssignmentWebhookUrl);
 
     // Compatibility with the single-URL settings UI used before delivery modes were introduced.
     const legacyPayloadUrl = cleanString_(payload.webhookUrl);
@@ -312,12 +385,18 @@ function saveSlackSettings(payload) {
     if (workflowMentionWebhookUrl && slackWebhookType_(workflowMentionWebhookUrl) !== 'workflow') {
       throw new Error('メンション通知には /triggers/ のWorkflow URLを入力してください。');
     }
+    if (workflowAssignmentWebhookUrl && slackWebhookType_(workflowAssignmentWebhookUrl) !== 'workflow') {
+      throw new Error('アサイン通知には /triggers/ のWorkflow URLを入力してください。');
+    }
     const nextStatusEnabled = Object.prototype.hasOwnProperty.call(payload, 'statusChangeEnabled')
       ? payload.statusChangeEnabled !== false
       : current.statusChangeEnabled;
     const nextMentionEnabled = Object.prototype.hasOwnProperty.call(payload, 'mentionEnabled')
       ? payload.mentionEnabled === true
       : current.mentionEnabled;
+    const nextAssignmentEnabled = Object.prototype.hasOwnProperty.call(payload, 'assignmentEnabled')
+      ? payload.assignmentEnabled === true
+      : current.assignmentEnabled;
     const legacyStoredUrl = cleanString_(properties.getProperty(SLACK_WEBHOOK_KEY));
     const existingAppUrl = cleanString_(properties.getProperty(SLACK_APP_WEBHOOK_KEY))
       || (legacyPayloadType === 'incoming' ? legacyPayloadUrl : '')
@@ -328,7 +407,8 @@ function saveSlackSettings(payload) {
     const existingWorkflowMentionUrl = cleanString_(properties.getProperty(SLACK_WORKFLOW_MENTION_WEBHOOK_KEY))
       || (legacyPayloadType === 'workflow' ? legacyPayloadUrl : '')
       || (slackWebhookType_(legacyStoredUrl) === 'workflow' ? legacyStoredUrl : '');
-    if (deliveryMode === 'app' && (nextStatusEnabled || nextMentionEnabled) && !appWebhookUrl && !existingAppUrl) {
+    const existingWorkflowAssignmentUrl = cleanString_(properties.getProperty(SLACK_WORKFLOW_ASSIGNMENT_WEBHOOK_KEY));
+    if (deliveryMode === 'app' && (nextStatusEnabled || nextMentionEnabled || nextAssignmentEnabled) && !appWebhookUrl && !existingAppUrl) {
       throw new Error('Slackアプリ方式のIncoming Webhook URLを入力してください。');
     }
     if (deliveryMode === 'workflow' && nextStatusEnabled && !workflowStatusWebhookUrl && !existingWorkflowStatusUrl) {
@@ -337,23 +417,32 @@ function saveSlackSettings(payload) {
     if (deliveryMode === 'workflow' && nextMentionEnabled && !workflowMentionWebhookUrl && !existingWorkflowMentionUrl) {
       throw new Error('メンション通知のWorkflow URLを入力してください。');
     }
+    if (deliveryMode === 'workflow' && nextAssignmentEnabled && !workflowAssignmentWebhookUrl && !existingWorkflowAssignmentUrl) {
+      throw new Error('アサイン通知のWorkflow URLを入力してください。');
+    }
     const nextStatusTemplate = Object.prototype.hasOwnProperty.call(payload, 'statusTemplate')
       ? normalizeSlackTemplate_(payload.statusTemplate, SLACK_DEFAULT_STATUS_TEMPLATE, SLACK_STATUS_TEMPLATE_KEYS, true)
       : current.statusTemplate;
     const nextMentionTemplate = Object.prototype.hasOwnProperty.call(payload, 'mentionTemplate')
       ? normalizeSlackTemplate_(payload.mentionTemplate, SLACK_DEFAULT_MENTION_TEMPLATE, SLACK_MENTION_TEMPLATE_KEYS, true)
       : current.mentionTemplate;
+    const nextAssignmentTemplate = Object.prototype.hasOwnProperty.call(payload, 'assignmentTemplate')
+      ? normalizeSlackTemplate_(payload.assignmentTemplate, SLACK_DEFAULT_ASSIGNMENT_TEMPLATE, SLACK_ASSIGNMENT_TEMPLATE_KEYS, true)
+      : current.assignmentTemplate;
     if (legacyPayloadUrl) properties.setProperty(SLACK_WEBHOOK_KEY, legacyPayloadUrl);
     if (appWebhookUrl) properties.setProperty(SLACK_APP_WEBHOOK_KEY, appWebhookUrl);
     if (workflowStatusWebhookUrl) properties.setProperty(SLACK_WORKFLOW_STATUS_WEBHOOK_KEY, workflowStatusWebhookUrl);
     if (workflowMentionWebhookUrl) properties.setProperty(SLACK_WORKFLOW_MENTION_WEBHOOK_KEY, workflowMentionWebhookUrl);
+    if (workflowAssignmentWebhookUrl) properties.setProperty(SLACK_WORKFLOW_ASSIGNMENT_WEBHOOK_KEY, workflowAssignmentWebhookUrl);
     properties.setProperty(SLACK_SETTINGS_KEY, JSON.stringify({
       deliveryMode: deliveryMode,
       statusChangeEnabled: nextStatusEnabled,
       mentionEnabled: nextMentionEnabled,
+      assignmentEnabled: nextAssignmentEnabled,
       mentionTemplateVersion: 2,
       statusTemplate: nextStatusTemplate,
-      mentionTemplate: nextMentionTemplate
+      mentionTemplate: nextMentionTemplate,
+      assignmentTemplate: nextAssignmentTemplate
     }));
     return { ok: true, slackSettings: publicSlackSettings_() };
   });
@@ -366,7 +455,7 @@ function testSlackConnection(payload) {
   const settings = slackNotificationSettings_();
   const target = cleanString_(payload.target) || (settings.deliveryMode === 'app' ? 'app' : 'workflowStatus');
   const actorSlackUserId = cleanString_(actor.SlackUserId).toUpperCase();
-  if (target === 'workflowMention' && !/^[UW][A-Z0-9]{2,31}$/.test(actorSlackUserId)) {
+  if ((target === 'workflowMention' || target === 'workflowAssignment') && !/^[UW][A-Z0-9]{2,31}$/.test(actorSlackUserId)) {
     return {
       ok: false,
       code: 'SLACK_MEMBER_ID_REQUIRED',
@@ -389,6 +478,17 @@ function testSlackConnection(payload) {
         web_app_url: webAppUrl_() || '-'
       },
       recipients: [{ slackUserId: actorSlackUserId, name: cleanString_(actor.Name) }]
+    } : target === 'workflowAssignment' ? {
+      type: 'assignment',
+      fields: {
+        notification_title: 'アサイン通知の接続テスト',
+        task_name: '接続テスト',
+        parent_path: '-',
+        actor_name: cleanString_(actor.Name),
+        end_date: '2026-12-31',
+        web_app_url: webAppUrl_() || '-'
+      },
+      recipients: [{ slackUserId: actorSlackUserId, name: cleanString_(actor.Name) }]
     } : {
       type: 'status',
       fields: {
@@ -404,7 +504,7 @@ function testSlackConnection(payload) {
   };
   const result = postToSlack_(testPayload, {
     force: true,
-    type: target === 'workflowMention' ? 'mention' : 'status',
+    type: target === 'workflowMention' ? 'mention' : target === 'workflowAssignment' ? 'assignment' : 'status',
     target: target
   });
   if (!result || result.skipped) {
@@ -437,6 +537,7 @@ function disconnectSlack(payload) {
     } else {
       properties.deleteProperty(SLACK_WORKFLOW_STATUS_WEBHOOK_KEY);
       properties.deleteProperty(SLACK_WORKFLOW_MENTION_WEBHOOK_KEY);
+      properties.deleteProperty(SLACK_WORKFLOW_ASSIGNMENT_WEBHOOK_KEY);
       if (slackWebhookType_(legacyUrl) === 'workflow') properties.deleteProperty(SLACK_WEBHOOK_KEY);
     }
     properties.deleteProperty(SLACK_DELIVERY_KEY);
@@ -456,21 +557,25 @@ function slackNotificationSettings_() {
       deliveryMode: deliveryMode,
       statusChangeEnabled: parsed.statusChangeEnabled !== false,
       mentionEnabled: parsed.mentionEnabled === true,
+      assignmentEnabled: parsed.assignmentEnabled === true,
       statusTemplate: normalizeSlackTemplate_(parsed.statusTemplate, SLACK_DEFAULT_STATUS_TEMPLATE, SLACK_STATUS_TEMPLATE_KEYS, false),
       mentionTemplate: normalizeSlackTemplate_(
         migrateLegacySlackMentionTemplate_(parsed.mentionTemplate, parsed.mentionTemplateVersion),
         SLACK_DEFAULT_MENTION_TEMPLATE,
         SLACK_MENTION_TEMPLATE_KEYS,
         false
-      )
+      ),
+      assignmentTemplate: normalizeSlackTemplate_(parsed.assignmentTemplate, SLACK_DEFAULT_ASSIGNMENT_TEMPLATE, SLACK_ASSIGNMENT_TEMPLATE_KEYS, false)
     };
   } catch (error) {
     return {
       deliveryMode: '',
       statusChangeEnabled: true,
       mentionEnabled: false,
+      assignmentEnabled: false,
       statusTemplate: SLACK_DEFAULT_STATUS_TEMPLATE,
-      mentionTemplate: SLACK_DEFAULT_MENTION_TEMPLATE
+      mentionTemplate: SLACK_DEFAULT_MENTION_TEMPLATE,
+      assignmentTemplate: SLACK_DEFAULT_ASSIGNMENT_TEMPLATE
     };
   }
 }
@@ -488,9 +593,11 @@ function publicSlackSettings_() {
   const storedAppUrl = cleanString_(properties.getProperty(SLACK_APP_WEBHOOK_KEY));
   const storedWorkflowStatusUrl = cleanString_(properties.getProperty(SLACK_WORKFLOW_STATUS_WEBHOOK_KEY));
   const storedWorkflowMentionUrl = cleanString_(properties.getProperty(SLACK_WORKFLOW_MENTION_WEBHOOK_KEY));
+  const storedWorkflowAssignmentUrl = cleanString_(properties.getProperty(SLACK_WORKFLOW_ASSIGNMENT_WEBHOOK_KEY));
   const appUrl = storedAppUrl || (legacyType === 'incoming' ? legacyUrl : '');
   const workflowStatusUrl = storedWorkflowStatusUrl || (legacyType === 'workflow' ? legacyUrl : '');
   const workflowMentionUrl = storedWorkflowMentionUrl || (legacyType === 'workflow' ? legacyUrl : '');
+  const workflowAssignmentUrl = storedWorkflowAssignmentUrl;
   const settings = slackNotificationSettings_();
   let delivery = {};
   try {
@@ -501,9 +608,10 @@ function publicSlackSettings_() {
   const activeConfigured = settings.deliveryMode === 'app'
     ? !!appUrl
     : settings.deliveryMode === 'workflow'
-      ? (settings.statusChangeEnabled || settings.mentionEnabled)
+      ? (settings.statusChangeEnabled || settings.mentionEnabled || settings.assignmentEnabled)
         && (!settings.statusChangeEnabled || !!workflowStatusUrl)
         && (!settings.mentionEnabled || !!workflowMentionUrl)
+        && (!settings.assignmentEnabled || !!workflowAssignmentUrl)
       : false;
   return {
     configured: activeConfigured,
@@ -516,13 +624,17 @@ function publicSlackSettings_() {
     workflowMentionConfigured: !!workflowMentionUrl,
     maskedWorkflowMentionWebhookUrl: maskedSlackWebhook_(workflowMentionUrl),
     workflowMentionLegacy: !storedWorkflowMentionUrl && legacyType === 'workflow',
+    workflowAssignmentConfigured: !!workflowAssignmentUrl,
+    maskedWorkflowAssignmentWebhookUrl: maskedSlackWebhook_(workflowAssignmentUrl),
     // Kept for cached clients from the previous single-URL UI.
     maskedWebhookUrl: maskedSlackWebhook_(settings.deliveryMode === 'app' ? appUrl : workflowStatusUrl),
     webhookType: settings.deliveryMode === 'app' ? 'incoming' : settings.deliveryMode === 'workflow' ? 'workflow' : '',
     statusChangeEnabled: settings.statusChangeEnabled,
     mentionEnabled: settings.mentionEnabled,
+    assignmentEnabled: settings.assignmentEnabled,
     statusTemplate: settings.statusTemplate,
     mentionTemplate: settings.mentionTemplate,
+    assignmentTemplate: settings.assignmentTemplate,
     lastSuccessAt: cleanString_(delivery.lastSuccessAt),
     lastErrorAt: cleanString_(delivery.lastErrorAt),
     lastError: cleanString_(delivery.lastError),
@@ -620,6 +732,16 @@ function webAppUrl_() {
   }
 }
 
+function webAppUrlForNode_(nodeId, commentId) {
+  const baseUrl = webAppUrl_();
+  const targetNodeId = cleanString_(nodeId);
+  if (!baseUrl || !targetNodeId) return baseUrl;
+  let url = baseUrl + (baseUrl.indexOf('?') === -1 ? '?' : '&') + 'node=' + encodeURIComponent(targetNodeId);
+  const targetCommentId = cleanString_(commentId);
+  if (targetCommentId) url += '&comment=' + encodeURIComponent(targetCommentId);
+  return url;
+}
+
 function slackEscape_(value) {
   return cleanString_(value)
     .replace(/&/g, '&amp;')
@@ -631,9 +753,13 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     SLACK_DEFAULT_STATUS_TEMPLATE: SLACK_DEFAULT_STATUS_TEMPLATE,
     SLACK_DEFAULT_MENTION_TEMPLATE: SLACK_DEFAULT_MENTION_TEMPLATE,
+    SLACK_DEFAULT_ASSIGNMENT_TEMPLATE: SLACK_DEFAULT_ASSIGNMENT_TEMPLATE,
     SLACK_STATUS_TEMPLATE_KEYS: SLACK_STATUS_TEMPLATE_KEYS,
     SLACK_MENTION_TEMPLATE_KEYS: SLACK_MENTION_TEMPLATE_KEYS,
+    SLACK_ASSIGNMENT_TEMPLATE_KEYS: SLACK_ASSIGNMENT_TEMPLATE_KEYS,
     buildMentionNotification_: buildMentionNotification_,
+    buildAssignmentNotification_: buildAssignmentNotification_,
+    webAppUrlForNode_: webAppUrlForNode_,
     slackMentionedUsers_: slackMentionedUsers_,
     slackWebhookType_: slackWebhookType_,
     slackRequestPayload_: slackRequestPayload_,

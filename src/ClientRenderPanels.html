@@ -232,7 +232,7 @@
       const selfMentioned = state.currentMember && mentions.includes(state.currentMember.id);
       const member = state.memberById.get(comment.authorId);
       return `
-        <article class="comment ${isReply ? 'reply' : ''} ${selfMentioned ? 'mentioned-self' : ''}">
+        <article class="comment ${isReply ? 'reply' : ''} ${selfMentioned ? 'mentioned-self' : ''}" data-comment-id="${h(comment.id)}">
           ${renderAvatar(member || { name: comment.authorName || '退職者', email: '', color: 'var(--color-text-tertiary)' })}
           <div class="comment-box">
             <div class="comment-head">
@@ -822,6 +822,7 @@
       const testingApp = submitting && slackAction === 'test:app';
       const testingStatus = submitting && slackAction === 'test:workflowStatus';
       const testingMention = submitting && slackAction === 'test:workflowMention';
+      const testingAssignment = submitting && slackAction === 'test:workflowAssignment';
       const mappedMembers = state.members.filter(member => member.slackUserId).length;
       const currentMemberMapped = Boolean(state.currentMember && state.currentMember.slackUserId);
       // GAS HtmlService can treat a literal protocol separator in an injected
@@ -858,7 +859,7 @@
           ` : deliveryMode === 'app' ? `
             <section class="slack-settings-section">
               <div class="slack-section-head">
-                <div><h3>Incoming Webhook</h3><p>1つのURLで、ステータス変更とコメントメンションを送信します。</p></div>
+                <div><h3>Incoming Webhook</h3><p>1つのURLで、ステータス変更、コメントメンション、アサイン通知を送信します。</p></div>
               </div>
               ${renderSlackEndpointField({
                 title: 'Slackアプリの送信先',
@@ -902,11 +903,21 @@
                 <span class="field-hint mono" id="slackMentionTemplateHelp">使用可能: {taskName} {parentPath} {mentionedUsers} {mentionedNames} {actorName} {commentText} {webAppUrl}</span>
                 <div class="inline-actions"><button class="button secondary compact" type="button" data-action="reset-slack-template" data-template-field="mentionTemplate" ${submitting ? 'disabled' : ''}>デフォルトに戻す</button></div>
               </div>
+              <label class="slack-notification-toggle">
+                <span class="switch"><input type="checkbox" data-draft-scope="projectSettings" data-draft-field="assignmentEnabled" ${checked(draft.assignmentEnabled === true)} ${submitting ? 'disabled' : ''}> 新しい担当者へのアサインを通知</span>
+                <span class="field-hint">担当へ追加された人だけを通知します。操作した本人へのセルフアサインと担当解除は通知しません。</span>
+              </label>
+              <div class="field">
+                <label class="field-label" for="slackAssignmentTemplate">アサインの送信文面</label>
+                <textarea class="textarea slack-template-textarea" id="slackAssignmentTemplate" rows="7" maxlength="2000" aria-describedby="slackAssignmentTemplateHelp" data-draft-scope="projectSettings" data-draft-field="assignmentTemplate" ${submitting ? 'disabled' : ''}>${h(draft.assignmentTemplate || SLACK_DEFAULT_ASSIGNMENT_TEMPLATE)}</textarea>
+                <span class="field-hint mono" id="slackAssignmentTemplateHelp">使用可能: {taskName} {parentPath} {assignedUsers} {assignedNames} {actorName} {endDate} {webAppUrl}</span>
+                <div class="inline-actions"><button class="button secondary compact" type="button" data-action="reset-slack-template" data-template-field="assignmentTemplate" ${submitting ? 'disabled' : ''}>デフォルトに戻す</button></div>
+              </div>
             </section>
           ` : `
             <div class="slack-workflow-note">
-              <strong>Slack側で2つのWorkflowを作成します</strong>
-              <span>①ステータス変更用と②コメントメンション用です。それぞれ受け取る変数が異なるため、発行されたURLを同じ番号の入力欄へ保存してください。</span>
+              <strong>Slack側で最大3つのWorkflowを作成します</strong>
+              <span>①ステータス変更用、②コメントメンション用、③アサイン通知用です。有効にする通知のWorkflowだけを作り、発行されたURLを同じ番号の入力欄へ保存してください。</span>
             </div>
             <section class="slack-settings-section">
               <div class="slack-section-head">
@@ -997,6 +1008,51 @@
                 ]
               })}
             </section>
+            <section class="slack-settings-section">
+              <div class="slack-section-head">
+                <div><h3>3. アサイン通知ワークフロー</h3><p>新しく担当へ追加された人ごとに1件送信します。セルフアサインと担当解除は対象外です。</p></div>
+                <label class="switch"><input type="checkbox" data-draft-scope="projectSettings" data-draft-field="assignmentEnabled" ${checked(draft.assignmentEnabled === true)} ${submitting ? 'disabled' : ''}> 有効</label>
+              </div>
+              <div class="slack-member-mapping">SlackメンバーID登録済み <strong>${mappedMembers}/${state.members.length}人</strong>${currentMemberMapped ? '' : ' · あなたのIDは未登録のため、アサイン接続テストはできません'}</div>
+              ${renderSlackEndpointField({
+                title: 'アサイン通知のWorkflow URL',
+                configured: settings.workflowAssignmentConfigured,
+                maskedUrl: settings.maskedWorkflowAssignmentWebhookUrl,
+                field: 'workflowAssignmentWebhookUrl',
+                value: draft.workflowAssignmentWebhookUrl,
+                placeholder: workflowWebhookPlaceholder,
+                target: 'workflowAssignment',
+                disabled: submitting,
+                testDisabled: !currentMemberMapped,
+                testing: testingAssignment,
+                guideId: 'slackWorkflowAssignmentGuide',
+                guideLabel: 'アサイン通知Workflowの設定手順を見る'
+              })}
+              ${renderSlackWorkflowSetupGuide({
+                id: 'slackWorkflowAssignmentGuide',
+                title: 'アサイン通知Workflow',
+                endpointLabel: 'アサイン通知のWorkflow URL',
+                variables: [
+                  { name: 'notification_title', description: '通知タイトル', example: 'タスクの担当に追加されました' },
+                  { name: 'task_name', description: 'タスク名', example: '見積書を作成' },
+                  { name: 'parent_path', description: '親タスクの階層', example: '営業準備 / 見積対応' },
+                  { name: 'assigned_user_id', type: 'ユーザーID', description: '新しく追加されたSlack本人', example: 'U012ABCDEF' },
+                  { name: 'assigned_user_name', description: '追加担当者名', example: '佐藤 花子' },
+                  { name: 'actor_name', description: '操作した人', example: '鈴木 太郎' },
+                  { name: 'end_date', description: 'タスクの期限', example: '2026-12-31' },
+                  { name: 'web_app_url', description: 'TaskBoardを開くURL', example: 'script.google.com/...' }
+                ],
+                messageLines: [
+                  [{ variable: 'notification_title' }],
+                  ['宛先: ', { variable: 'assigned_user_id' }, '（', { variable: 'assigned_user_name' }, '）'],
+                  ['タスク: ', { variable: 'task_name' }],
+                  ['親パス: ', { variable: 'parent_path' }],
+                  ['期限: ', { variable: 'end_date' }],
+                  ['実行者: ', { variable: 'actor_name' }],
+                  ['タスクを開く: ', { variable: 'web_app_url' }]
+                ]
+              })}
+            </section>
             <div class="slack-workflow-footer-help">
               <span>変数は入れ子にせず、画面の表にある名前をそのまま登録してください。Webhook URLは公開Issueやログへ貼らないでください。</span>
               <a class="slack-help-link" href="${h(workflowHelpUrl)}" target="_blank" rel="noopener noreferrer">Slack公式のWebhook Workflow手順を開く ${icon('arrow-right')}</a>
@@ -1007,9 +1063,9 @@
             <div class="slack-settings-actions">
               <div class="inline-actions">
                 ${renderSubmitButton({ submitting: saving, disabled: submitting, iconName: 'check', label: 'Slack通知設定を保存' })}
-                <button class="button destructive" type="button" data-action="disconnect-slack" data-slack-target="${h(deliveryMode)}" ${deliveryMode === 'app' ? (!settings.appConfigured || submitting ? 'disabled' : '') : (!(settings.workflowStatusConfigured || settings.workflowMentionConfigured) || submitting ? 'disabled' : '')}>この方式の連携を解除</button>
+                <button class="button destructive" type="button" data-action="disconnect-slack" data-slack-target="${h(deliveryMode)}" ${deliveryMode === 'app' ? (!settings.appConfigured || submitting ? 'disabled' : '') : (!(settings.workflowStatusConfigured || settings.workflowMentionConfigured || settings.workflowAssignmentConfigured) || submitting ? 'disabled' : '')}>この方式の連携を解除</button>
               </div>
-              <div class="slack-action-status" aria-live="polite">${saving ? '<span class="btn-spinner"></span>保存しています…' : testingApp || testingStatus || testingMention ? '<span class="btn-spinner"></span>テスト通知を送信しています…' : 'URLを空欄にしたまま保存しても、設定済みURLは消えません。'}</div>
+              <div class="slack-action-status" aria-live="polite">${saving ? '<span class="btn-spinner"></span>保存しています…' : testingApp || testingStatus || testingMention || testingAssignment ? '<span class="btn-spinner"></span>テスト通知を送信しています…' : 'URLを空欄にしたまま保存しても、設定済みURLは消えません。'}</div>
             </div>
           ` : ''}
         </form>

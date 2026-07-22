@@ -42,6 +42,49 @@ function getComments(nodeId, options) {
   return page;
 }
 
+function getCommentThread(payload) {
+  payload = payload || {};
+  requireSchemaExists_();
+  const rows = readCommentSnapshot_();
+  return commentThreadFromIndex_(
+    cleanString_(payload.nodeId),
+    cleanString_(payload.commentId),
+    activeNodes_(rows.nodes),
+    rows.comments
+  );
+}
+
+function commentThreadFromIndex_(nodeId, commentId, activeNodes, commentIndex) {
+  const active = activeNodes || [];
+  if (!byId_(active, 'NodeId')[nodeId]) {
+    throw new Error('コメント先のタスクが見つかりません。');
+  }
+  const index = commentIndex || [];
+  const target = index.find(function (comment) {
+    return cleanString_(comment.CommentId) === commentId && cleanString_(comment.NodeId) === nodeId;
+  });
+  if (!target) {
+    throw new Error('対象のコメントが見つかりません。');
+  }
+  const rootId = cleanString_(target.ParentCommentId) || commentId;
+  const selected = index.filter(function (comment) {
+    return cleanString_(comment.NodeId) === nodeId
+      && (cleanString_(comment.CommentId) === rootId || cleanString_(comment.ParentCommentId) === rootId);
+  });
+  const expectedIds = {};
+  selected.forEach(function (comment) { expectedIds[cleanString_(comment.CommentId)] = true; });
+  const comments = readObjectsAtRows_(SHEET.COMMENTS, selected.map(function (comment) { return comment.__row; }))
+    .filter(function (comment) {
+      return cleanString_(comment.NodeId) === nodeId && !!expectedIds[cleanString_(comment.CommentId)];
+    })
+    .sort(function (a, b) { return cleanString_(a.Timestamp).localeCompare(cleanString_(b.Timestamp)); })
+    .map(clientComment_);
+  if (comments.length !== selected.length) {
+    throw appError_('ROW_IDENTITY_MISMATCH', 'コメントの行位置が読込中に変わりました。もう一度読み込んでください。', true);
+  }
+  return { ok: true, nodeId: nodeId, commentId: commentId, comments: comments };
+}
+
 function commentPage_(comments, options) {
   const limit = Math.min(100, Math.max(10, Number(options.limit) || 50));
   const beforeTimestamp = cleanString_(options.beforeTimestamp);
@@ -302,6 +345,8 @@ function deleteMember(payload) {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     getComments: getComments,
+    getCommentThread: getCommentThread,
+    commentThreadFromIndex_: commentThreadFromIndex_,
     addComment: addComment,
     commentPage_: commentPage_,
     joinAsMember: joinAsMember,

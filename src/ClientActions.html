@@ -625,10 +625,13 @@
           appWebhookUrl: '',
           workflowStatusWebhookUrl: '',
           workflowMentionWebhookUrl: '',
+          workflowAssignmentWebhookUrl: '',
           statusChangeEnabled: state.slackSettings.statusChangeEnabled !== false,
           mentionEnabled: state.slackSettings.mentionEnabled === true,
+          assignmentEnabled: state.slackSettings.assignmentEnabled === true,
           statusTemplate: state.slackSettings.statusTemplate || SLACK_DEFAULT_STATUS_TEMPLATE,
-          mentionTemplate: state.slackSettings.mentionTemplate || SLACK_DEFAULT_MENTION_TEMPLATE
+          mentionTemplate: state.slackSettings.mentionTemplate || SLACK_DEFAULT_MENTION_TEMPLATE,
+          assignmentTemplate: state.slackSettings.assignmentTemplate || SLACK_DEFAULT_ASSIGNMENT_TEMPLATE
         };
       }
       return { milestoneId: '', name: '', date: '', note: '' };
@@ -715,8 +718,9 @@
       }
       const statusEnabled = draft.statusChangeEnabled !== false;
       const mentionEnabled = draft.mentionEnabled === true;
+      const assignmentEnabled = draft.assignmentEnabled === true;
       if (draft.deliveryMode === 'app'
-        && (statusEnabled || mentionEnabled)
+        && (statusEnabled || mentionEnabled || assignmentEnabled)
         && !cleanText(draft.appWebhookUrl)
         && !state.slackSettings.appConfigured) {
         showToast('Incoming Webhook URLを入力してください', 'error');
@@ -736,6 +740,13 @@
         showToast('メンション通知のWorkflow URLを入力してください', 'error');
         return;
       }
+      if (draft.deliveryMode === 'workflow'
+        && assignmentEnabled
+        && !cleanText(draft.workflowAssignmentWebhookUrl)
+        && !state.slackSettings.workflowAssignmentConfigured) {
+        showToast('アサイン通知のWorkflow URLを入力してください', 'error');
+        return;
+      }
       const previous = { ...state.slackSettings };
       dialog.submitting = true;
       dialog.slackAction = 'save';
@@ -745,28 +756,36 @@
         appWebhookUrl: cleanText(draft.appWebhookUrl),
         workflowStatusWebhookUrl: cleanText(draft.workflowStatusWebhookUrl),
         workflowMentionWebhookUrl: cleanText(draft.workflowMentionWebhookUrl),
+        workflowAssignmentWebhookUrl: cleanText(draft.workflowAssignmentWebhookUrl),
         statusChangeEnabled: draft.statusChangeEnabled !== false,
         mentionEnabled: draft.mentionEnabled === true,
+        assignmentEnabled: draft.assignmentEnabled === true,
         statusTemplate: cleanText(draft.statusTemplate) || SLACK_DEFAULT_STATUS_TEMPLATE,
-        mentionTemplate: cleanText(draft.mentionTemplate) || SLACK_DEFAULT_MENTION_TEMPLATE
+        mentionTemplate: cleanText(draft.mentionTemplate) || SLACK_DEFAULT_MENTION_TEMPLATE,
+        assignmentTemplate: cleanText(draft.assignmentTemplate) || SLACK_DEFAULT_ASSIGNMENT_TEMPLATE
       }, () => {
         const nextAppConfigured = Boolean(cleanText(draft.appWebhookUrl)) || state.slackSettings.appConfigured;
         const nextWorkflowStatusConfigured = Boolean(cleanText(draft.workflowStatusWebhookUrl)) || state.slackSettings.workflowStatusConfigured;
         const nextWorkflowMentionConfigured = Boolean(cleanText(draft.workflowMentionWebhookUrl)) || state.slackSettings.workflowMentionConfigured;
+        const nextWorkflowAssignmentConfigured = Boolean(cleanText(draft.workflowAssignmentWebhookUrl)) || state.slackSettings.workflowAssignmentConfigured;
         state.slackSettings = Object.assign({}, state.slackSettings, {
           deliveryMode: draft.deliveryMode,
           appConfigured: nextAppConfigured,
           workflowStatusConfigured: nextWorkflowStatusConfigured,
           workflowMentionConfigured: nextWorkflowMentionConfigured,
+          workflowAssignmentConfigured: nextWorkflowAssignmentConfigured,
           configured: draft.deliveryMode === 'app'
-            ? (statusEnabled || mentionEnabled) && nextAppConfigured
-            : (statusEnabled || mentionEnabled)
+            ? (statusEnabled || mentionEnabled || assignmentEnabled) && nextAppConfigured
+            : (statusEnabled || mentionEnabled || assignmentEnabled)
               && (draft.statusChangeEnabled === false || nextWorkflowStatusConfigured)
-              && (draft.mentionEnabled !== true || nextWorkflowMentionConfigured),
+              && (draft.mentionEnabled !== true || nextWorkflowMentionConfigured)
+              && (draft.assignmentEnabled !== true || nextWorkflowAssignmentConfigured),
           statusChangeEnabled: draft.statusChangeEnabled !== false,
           mentionEnabled: draft.mentionEnabled === true,
+          assignmentEnabled: draft.assignmentEnabled === true,
           statusTemplate: cleanText(draft.statusTemplate) || SLACK_DEFAULT_STATUS_TEMPLATE,
-          mentionTemplate: cleanText(draft.mentionTemplate) || SLACK_DEFAULT_MENTION_TEMPLATE
+          mentionTemplate: cleanText(draft.mentionTemplate) || SLACK_DEFAULT_MENTION_TEMPLATE,
+          assignmentTemplate: cleanText(draft.assignmentTemplate) || SLACK_DEFAULT_ASSIGNMENT_TEMPLATE
         });
       }, () => {
         state.slackSettings = previous;
@@ -776,6 +795,7 @@
             dialog.draft.appWebhookUrl = '';
             dialog.draft.workflowStatusWebhookUrl = '';
             dialog.draft.workflowMentionWebhookUrl = '';
+            dialog.draft.workflowAssignmentWebhookUrl = '';
           }
           showToast('Slack通知設定を保存しました', 'success');
         },
@@ -793,6 +813,7 @@
       if (!dialog || dialog.type !== 'projectSettings' || state.projectSettingsTab !== 'slack') return;
       if (field === 'statusTemplate') dialog.draft.statusTemplate = SLACK_DEFAULT_STATUS_TEMPLATE;
       if (field === 'mentionTemplate') dialog.draft.mentionTemplate = SLACK_DEFAULT_MENTION_TEMPLATE;
+      if (field === 'assignmentTemplate') dialog.draft.assignmentTemplate = SLACK_DEFAULT_ASSIGNMENT_TEMPLATE;
       if (dialog.drafts) dialog.drafts.slack = dialog.draft;
       render();
     }
@@ -822,7 +843,7 @@
       const selectedTarget = target === 'app' ? 'app' : 'workflow';
       const configured = selectedTarget === 'app'
         ? state.slackSettings && state.slackSettings.appConfigured
-        : state.slackSettings && (state.slackSettings.workflowStatusConfigured || state.slackSettings.workflowMentionConfigured);
+        : state.slackSettings && (state.slackSettings.workflowStatusConfigured || state.slackSettings.workflowMentionConfigured || state.slackSettings.workflowAssignmentConfigured);
       if (!configured) return;
       openContextualConfirm({ type: 'confirmSlackDisconnect', slackTarget: selectedTarget });
     }
@@ -841,7 +862,9 @@
           workflowStatusLegacy: false,
           workflowMentionConfigured: false,
           maskedWorkflowMentionWebhookUrl: '',
-          workflowMentionLegacy: false
+          workflowMentionLegacy: false,
+          workflowAssignmentConfigured: false,
+          maskedWorkflowAssignmentWebhookUrl: ''
         };
         state.slackSettings = Object.assign({}, state.slackSettings, patch, {
           configured: state.slackSettings.deliveryMode === target ? false : state.slackSettings.configured,
@@ -1081,16 +1104,23 @@
 
     function discardDetailChangesAndClose() {
       const nextNodeId = state.dialog && state.dialog.nextNodeId;
+      const nextNotificationId = state.dialog && state.dialog.nextNotificationId;
       const drawerReturnFocus = state.drawerReturnFocus;
       closeDialog(false);
       closeDrawer({ force: true });
-      if (nextNodeId) openNode(nextNodeId, { skipDirtyCheck: true, returnFocus: drawerReturnFocus });
+      if (nextNotificationId) {
+        const notification = state.notifications.find(item => item.id === nextNotificationId);
+        if (notification) openNotificationTarget(notification);
+      } else if (nextNodeId) {
+        openNode(nextNodeId, { skipDirtyCheck: true, returnFocus: drawerReturnFocus });
+      }
     }
 
     function saveDetailChangesAndClose() {
       const nextNodeId = state.dialog && state.dialog.nextNodeId;
+      const nextNotificationId = state.dialog && state.dialog.nextNotificationId;
       closeDialog(false);
-      return saveDetail({ closeAfter: true, openAfterNodeId: nextNodeId || '' });
+      return saveDetail({ closeAfter: true, openAfterNodeId: nextNodeId || '', openAfterNotificationId: nextNotificationId || '' });
     }
 
     async function createChildShell(parentId, options = {}) {
@@ -1428,6 +1458,11 @@
           }
         },
         onSuccess: () => {
+          if (options.openAfterNotificationId) {
+            const notification = state.notifications.find(item => item.id === options.openAfterNotificationId);
+            if (notification) openNotificationTarget(notification);
+            return;
+          }
           if (options.openAfterNodeId) {
             openNode(options.openAfterNodeId, { skipDirtyCheck: true, returnFocus: drawerReturnFocus });
             return;
@@ -1746,6 +1781,201 @@
       await syncFromServer({ force: true });
     }
 
+    function openInitialDeepLink(finalAttempt) {
+      if (state.initialDeepLinkHandled) return;
+      const nodeId = String(window.__TASKBOARD_BOOTSTRAP_NODE_ID__ || '').trim();
+      const commentId = String(window.__TASKBOARD_BOOTSTRAP_COMMENT_ID__ || '').trim();
+      if (!nodeId) {
+        state.initialDeepLinkHandled = true;
+        return;
+      }
+      if (!state.nodesById.has(nodeId)) {
+        if (finalAttempt) {
+          state.initialDeepLinkHandled = true;
+          showToast('リンク先のタスクが見つかりません', 'error');
+        }
+        return;
+      }
+      state.initialDeepLinkHandled = true;
+      openDeepLinkTarget(nodeId, commentId);
+    }
+
+    async function openDeepLinkTarget(nodeId, commentId) {
+      if (state.drawerNodeId === nodeId) {
+        render();
+      } else {
+        openNode(nodeId, { skipDirtyCheck: true });
+      }
+      if (commentId) {
+        await hydrateAndScrollToComment_(nodeId, commentId, 'getCommentThread');
+      }
+    }
+
+    function toggleNotificationInbox() {
+      if (!state.currentMember) return;
+      state.notificationInboxOpen = !state.notificationInboxOpen;
+      state.notificationMenuId = '';
+      state.openDropdown = '';
+      state.calendarView = null;
+      render();
+      if (state.notificationInboxOpen) loadNotifications(true);
+    }
+
+    async function loadNotifications(reset = true, options = {}) {
+      if (!state.currentMember) return;
+      const hasCachedPage = reset && state.notificationLoadedAt > 0;
+      const cacheIsFresh = hasCachedPage
+        && Date.now() - state.notificationLoadedAt < NOTIFICATION_MEMORY_TTL_MS;
+      if (reset && cacheIsFresh && options.force !== true) return;
+      if ((reset && (state.notificationLoading || state.notificationRefreshing)) || (!reset && state.notificationLoadingMore)) return;
+      if (reset) {
+        state.notificationLoading = !hasCachedPage;
+        state.notificationRefreshing = hasCachedPage;
+        state.notificationMenuId = '';
+      } else {
+        state.notificationLoadingMore = true;
+      }
+      render();
+      try {
+        const cursor = reset ? {} : (state.notificationPage.nextCursor || {});
+        const result = await serverCall('getNotifications', {
+          limit: 50,
+          beforeTimestamp: cursor.beforeTimestamp || '',
+          beforeId: cursor.beforeId || ''
+        });
+        const incoming = Array.isArray(result.notifications) ? result.notifications : [];
+        if (reset) {
+          state.notifications = incoming;
+        } else {
+          const byId = new Map(state.notifications.map(item => [item.id, item]));
+          incoming.forEach(item => byId.set(item.id, item));
+          state.notifications = Array.from(byId.values());
+        }
+        state.notificationUnreadCount = Math.max(0, Number(result.unreadCount) || 0);
+        state.notificationPage = {
+          hasMore: Boolean(result.hasMore),
+          nextCursor: result.nextCursor || null
+        };
+        state.notificationLoadedAt = Date.now();
+        persistLocalCache();
+      } catch (error) {
+        showToast(error.message, 'error');
+      } finally {
+        state.notificationLoading = false;
+        state.notificationRefreshing = false;
+        state.notificationLoadingMore = false;
+        if (state.notificationInboxOpen) render();
+      }
+    }
+
+    function toggleNotificationMenu(notificationId) {
+      state.notificationMenuId = state.notificationMenuId === notificationId ? '' : notificationId;
+      render();
+    }
+
+    async function markNotificationReadFromInbox(notificationId) {
+      const notification = state.notifications.find(item => item.id === notificationId);
+      if (!notification || notification.unread !== true) return;
+      state.notificationMenuId = '';
+      try {
+        const result = await serverCall('markNotificationRead', {
+          notificationKey: notification.id,
+          commentId: notification.commentId
+        });
+        notification.unread = false;
+        notification.readAt = result.readAt || new Date().toISOString();
+        state.notificationUnreadCount = Math.max(0, Number(result.unreadCount) || 0);
+        persistLocalCache();
+        render();
+      } catch (error) {
+        showToast(error.message, 'error');
+      }
+    }
+
+    async function markAllNotificationsReadFromInbox() {
+      if (!state.notificationUnreadCount || state.notificationMarkingAll) return;
+      state.notificationMarkingAll = true;
+      state.notificationMenuId = '';
+      render();
+      try {
+        const result = await serverCall('markAllNotificationsRead');
+        const readAt = result.readAt || new Date().toISOString();
+        state.notifications.forEach(item => {
+          item.unread = false;
+          if (!item.readAt) item.readAt = readAt;
+        });
+        state.notificationUnreadCount = Math.max(0, Number(result.unreadCount) || 0);
+        persistLocalCache();
+      } catch (error) {
+        showToast(error.message, 'error');
+      } finally {
+        state.notificationMarkingAll = false;
+        if (state.notificationInboxOpen) render();
+      }
+    }
+
+    function openNotificationFromInbox(notificationId) {
+      const notification = state.notifications.find(item => item.id === notificationId);
+      if (!notification) return;
+      state.notificationInboxOpen = false;
+      state.notificationMenuId = '';
+      if (state.drawerNodeId && state.drawerNodeId !== notification.nodeId && hasUnsavedDetailDraft()) {
+        openContextualConfirm({
+          type: 'confirmDetailClose',
+          nextNodeId: notification.nodeId,
+          nextNotificationId: notification.id
+        });
+        return;
+      }
+      openNotificationTarget(notification);
+    }
+
+    async function openNotificationTarget(notification) {
+      if (!notification || !state.nodesById.has(notification.nodeId)) {
+        showToast('通知先のタスクが見つかりません', 'error');
+        return;
+      }
+      // Opening a mention for the task already shown in the drawer must not
+      // reinitialize and discard an unsaved detail draft.
+      if (state.drawerNodeId === notification.nodeId) {
+        render();
+      } else {
+        openNode(notification.nodeId, { skipDirtyCheck: true });
+      }
+      const opened = await hydrateAndScrollToComment_(notification.nodeId, notification.commentId, 'getNotificationCommentThread');
+      if (opened && notification.unread === true) await markNotificationReadFromInbox(notification.id);
+    }
+
+    async function hydrateAndScrollToComment_(nodeId, commentId, apiName) {
+      try {
+        const result = await serverCall(apiName, { nodeId, commentId });
+        const existing = state.comments.get(nodeId) || [];
+        const byId = new Map(existing.map(comment => [comment.id, comment]));
+        (result.comments || []).forEach(comment => byId.set(comment.id, comment));
+        state.comments.set(nodeId, Array.from(byId.values()).sort((a, b) => String(a.timestamp || '').localeCompare(String(b.timestamp || ''))));
+        state.scrollToCommentId = commentId;
+        render();
+        return true;
+      } catch (error) {
+        showToast(error.message, 'error');
+        return false;
+      }
+    }
+
+    function flushPendingCommentScroll() {
+      if (!state.scrollToCommentId) return;
+      const target = document.querySelector(`[data-comment-id="${cssEscape(state.scrollToCommentId)}"]`);
+      if (!target) return;
+      const commentId = state.scrollToCommentId;
+      state.scrollToCommentId = '';
+      target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      target.classList.add('notification-comment-target');
+      window.setTimeout(() => {
+        const current = document.querySelector(`[data-comment-id="${cssEscape(commentId)}"]`);
+        if (current) current.classList.remove('notification-comment-target');
+      }, 1800);
+    }
+
     async function loadComments(nodeId, loadEarlier = false) {
       const node = state.nodesById.get(nodeId);
       // A node without updatedAt is an optimistic local creation whose addNode is
@@ -1765,7 +1995,10 @@
           beforeId: cursor.beforeId || ''
         });
         const incoming = Array.isArray(result) ? result : (result.comments || []);
-        const existing = loadEarlier ? (state.comments.get(nodeId) || []) : [];
+        // Notification navigation may hydrate one older thread while the regular
+        // first page is still loading. Always merge so that exact target is not
+        // discarded by the later page response.
+        const existing = state.comments.get(nodeId) || [];
         const byId = new Map(existing.map(comment => [comment.id, comment]));
         incoming.forEach(comment => byId.set(comment.id, comment));
         state.comments.set(nodeId, Array.from(byId.values()).sort((a, b) => String(a.timestamp || '').localeCompare(String(b.timestamp || ''))));

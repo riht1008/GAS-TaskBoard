@@ -36,6 +36,11 @@ test('SlackUserId is an append-only Members schema extension', () => {
   assert.match(configSource, /TEXT_COLUMNS\[SHEET\.MEMBERS\] = \['MemberId', 'Name', 'Email', 'Color', 'Company', 'SlackUserId'\]/);
 });
 
+test('NotificationReads stores only per-member read receipts as text', () => {
+  assert.match(configSource, /HEADERS\[SHEET\.NOTIFICATION_READS\] = \['NotificationKey', 'RecipientMemberId', 'NotificationType', 'SourceId', 'ReadAt'\]/);
+  assert.match(configSource, /TEXT_COLUMNS\[SHEET\.NOTIFICATION_READS\] = \['NotificationKey', 'RecipientMemberId', 'NotificationType', 'SourceId', 'ReadAt'\]/);
+});
+
 test('normalizeCellValue formats milestone Date objects as yyyy-mm-dd in script timezone', () => {
   const value = new Date('2026-07-14T15:00:00.000Z');
 

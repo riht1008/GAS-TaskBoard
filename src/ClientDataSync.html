@@ -6,6 +6,7 @@
         state.syncStatus = 'local';
         applyFullData(cached, { fromCache: true });
         render();
+        openInitialDeepLink(false);
       }
       try {
         const data = await serverCall('loadAll');
@@ -25,6 +26,7 @@
         applyFullData(data);
         persistLocalCache();
         render();
+        openInitialDeepLink(true);
       } catch (error) {
         const accessDenied = /権限|permission|authorization|not authorized|access denied/i.test(error.message || '');
         if (accessDenied) clearLocalCache({ silent: true });
@@ -185,6 +187,11 @@
         .filter(item => isClientDateText(item.date))
         .sort((a, b) => a.date.localeCompare(b.date));
       state.commentCounts = data.commentCounts || {};
+      const nextNotificationUnreadCount = Math.max(0, Number(data.notificationUnreadCount) || 0);
+      if (state.notificationUnreadCount !== nextNotificationUnreadCount) {
+        state.notificationLoadedAt = 0;
+      }
+      state.notificationUnreadCount = nextNotificationUnreadCount;
       state.slackSettings = Object.assign({}, state.slackSettings, data.slackSettings || {});
       state.currentMember = data.currentMember || null;
       state.currentEmail = data.currentEmail || '';
@@ -244,6 +251,7 @@
         calendarOverrides: state.calendarOverrides,
         slackSettings: state.slackSettings,
         commentCounts: state.commentCounts,
+        notificationUnreadCount: state.notificationUnreadCount,
         unregistered: state.unregistered
       };
     }

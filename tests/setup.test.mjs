@@ -47,7 +47,13 @@ global.writeObjects_ = () => {};
 global.makeFullPayload_ = source => ({ ok: true, rows: source });
 
 const require = createRequire(import.meta.url);
-const { setupProject } = require('../src/Code.js');
+const { setupProject, safeBootstrapId_ } = require('../src/Code.js');
+
+test('deep-link bootstrap accepts app IDs and rejects script injection text', () => {
+  assert.equal(safeBootstrapId_('node-1234'), 'node-1234');
+  assert.equal(safeBootstrapId_('comment:legacy_1'), 'comment:legacy_1');
+  assert.equal(safeBootstrapId_('</script>'), '');
+});
 
 function resetRows() {
   rows = {

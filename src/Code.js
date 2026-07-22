@@ -6,10 +6,19 @@
  * at read/write time and are never persisted.
  */
 
-function doGet() {
+function doGet(e) {
+  e = e || {};
+  const parameters = e.parameter || {};
   const template = HtmlService.createTemplateFromFile('Index');
   template.bootstrapEmail = getCurrentEmail_();
+  template.bootstrapNodeId = safeBootstrapId_(parameters.node);
+  template.bootstrapCommentId = safeBootstrapId_(parameters.comment);
   return template.evaluate().setTitle('タスク管理');
+}
+
+function safeBootstrapId_(value) {
+  const id = cleanString_(value);
+  return /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(id) ? id : '';
 }
 
 function include(filename) {
@@ -155,6 +164,7 @@ function ping() {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     setupProject: setupProject,
-    loadAll: loadAll
+    loadAll: loadAll,
+    safeBootstrapId_: safeBootstrapId_
   };
 }

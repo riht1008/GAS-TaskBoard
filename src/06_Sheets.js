@@ -15,6 +15,9 @@ function readAll_(options) {
     if (sheetName === SHEET.ACTIVITY_LOG && !options.includeActivityLog && !selected) {
       return false;
     }
+    if (sheetName === SHEET.NOTIFICATION_READS && !options.includeNotificationReads && !selected) {
+      return false;
+    }
     return !selected || !!selected[sheetName];
   }
   const rows = {
@@ -26,7 +29,8 @@ function readAll_(options) {
     activityLog: shouldRead(SHEET.ACTIVITY_LOG) ? readObjects_(SHEET.ACTIVITY_LOG) : [],
     milestones: shouldRead(SHEET.MILESTONES) ? readObjects_(SHEET.MILESTONES) : [],
     meetings: shouldRead(SHEET.MEETINGS) ? readObjects_(SHEET.MEETINGS) : [],
-    calendarOverrides: shouldRead(SHEET.CALENDAR_OVERRIDES) ? readObjects_(SHEET.CALENDAR_OVERRIDES) : []
+    calendarOverrides: shouldRead(SHEET.CALENDAR_OVERRIDES) ? readObjects_(SHEET.CALENDAR_OVERRIDES) : [],
+    notificationReads: shouldRead(SHEET.NOTIFICATION_READS) ? readObjects_(SHEET.NOTIFICATION_READS) : []
   };
   rows.commentCounts = options.includeCommentCounts === true ? readCommentCounts_() : null;
   rows.__loadedSheets = {};

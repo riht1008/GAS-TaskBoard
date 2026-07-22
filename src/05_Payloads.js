@@ -24,6 +24,7 @@ function makeFullPayload_(rows) {
     calendarOverrides: clientCalendarOverrides_(rows.calendarOverrides),
     slackSettings: publicSlackSettings_(),
     commentCounts: commentCounts_(rows),
+    notificationUnreadCount: currentMember ? unreadMentionCountForMember_(currentMember.MemberId, active) : 0,
     unregistered: !currentMember
   };
 }

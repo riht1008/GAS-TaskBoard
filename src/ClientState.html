@@ -17,6 +17,15 @@
       '{commentText}',
       '*Webアプリ*: {webAppUrl}'
     ].join('\n');
+    const SLACK_DEFAULT_ASSIGNMENT_TEMPLATE = [
+      '*タスクの担当に追加されました*',
+      '*タスク*: {taskName}',
+      '*親パス*: {parentPath}',
+      '*追加担当者*: {assignedUsers}',
+      '*期限*: {endDate}',
+      '*実行者*: {actorName}',
+      '*Webアプリ*: {webAppUrl}'
+    ].join('\n');
 
     const state = {
       setupRequired: false,
@@ -68,6 +77,18 @@
       commentMentionIds: {},
       commentReplyTo: null,
       commentMention: null,
+      notificationInboxOpen: false,
+      notifications: [],
+      notificationUnreadCount: 0,
+      notificationLoading: false,
+      notificationRefreshing: false,
+      notificationLoadingMore: false,
+      notificationLoadedAt: 0,
+      notificationPage: { hasMore: false, nextCursor: null },
+      notificationMenuId: '',
+      notificationMarkingAll: false,
+      scrollToCommentId: '',
+      initialDeepLinkHandled: false,
       ganttZoom: 'day',
       ganttScaleFactor: 1,
       ganttTimelineCollapsed: false,
@@ -109,10 +130,14 @@
         workflowMentionConfigured: false,
         maskedWorkflowMentionWebhookUrl: '',
         workflowMentionLegacy: false,
+        workflowAssignmentConfigured: false,
+        maskedWorkflowAssignmentWebhookUrl: '',
         statusChangeEnabled: true,
         mentionEnabled: false,
+        assignmentEnabled: false,
         statusTemplate: SLACK_DEFAULT_STATUS_TEMPLATE,
         mentionTemplate: SLACK_DEFAULT_MENTION_TEMPLATE,
+        assignmentTemplate: SLACK_DEFAULT_ASSIGNMENT_TEMPLATE,
         lastSuccessAt: '',
         lastErrorAt: '',
         lastError: '',
@@ -126,6 +151,7 @@
     const LOCAL_CACHE_PREFIX = 'gasTaskManager.cache.v2';
     const LOCAL_CACHE_INDEX_KEY = 'gasTaskManager.cache.index.v2';
     const LOCAL_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+    const NOTIFICATION_MEMORY_TTL_MS = 30 * 1000;
     const SERVER_CALL_TIMEOUT_MS = 60000;
     const PROJECT_DATE_MIN = '2000-01-01';
     const PROJECT_DATE_MAX = '2100-12-31';
@@ -153,7 +179,9 @@
       scale: '<path d="M4 19V5"></path><path d="M20 19V5"></path><path d="M8 12h8"></path><path d="m10 9-3 3 3 3"></path><path d="m14 9 3 3-3 3"></path>',
       database: '<ellipse cx="12" cy="5" rx="8" ry="3"></ellipse><path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5"></path><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"></path>',
       'check-circle': '<path d="m9 12 2 2 4-4"></path><circle cx="12" cy="12" r="9"></circle>',
-      'alert-circle': '<circle cx="12" cy="12" r="9"></circle><path d="M12 8v4"></path><path d="M12 16h.01"></path>'
+      'alert-circle': '<circle cx="12" cy="12" r="9"></circle><path d="M12 8v4"></path><path d="M12 16h.01"></path>',
+      bell: '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path>',
+      'more-horizontal': '<circle cx="5" cy="12" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle>'
     };
 
     function icon(name, extraClass = '') {
@@ -195,6 +223,12 @@
       if (state.openDropdown && !event.target.closest('.dropdown') && !event.target.closest('[data-dropdown-portal]')) {
         state.openDropdown = '';
         state.calendarView = null;
+        render();
+        return;
+      }
+      if (state.notificationInboxOpen && !event.target.closest('[data-notification-surface]')) {
+        state.notificationInboxOpen = false;
+        state.notificationMenuId = '';
         render();
       }
     });
