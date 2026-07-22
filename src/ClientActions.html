@@ -2465,6 +2465,7 @@
       event.preventDefault();
       bar.setPointerCapture(event.pointerId);
       state.ganttCreateDrag = { type: 'bar', nodeId: node.id };
+      setGanttLinkedHover(node.id);
 
       const updateChip = () => {
         if (!canvas) return;
@@ -2485,6 +2486,7 @@
         document.removeEventListener('keydown', onKeyDown);
         if (chip) chip.remove();
         state.ganttCreateDrag = null;
+        setGanttLinkedHover('');
         finishDeferredRender();
       };
 

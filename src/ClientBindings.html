@@ -513,8 +513,53 @@
       });
     }
 
+    function ganttLinkedNodeId(target) {
+      if (!target || typeof target.closest !== 'function') return '';
+      const element = target.closest('[data-tree-node], [data-gantt-row-node], [data-gantt-bar]');
+      if (!element || !element.closest('.gantt-frame')) return '';
+      return element.dataset.treeNode || element.dataset.ganttRowNode || element.dataset.ganttBar || '';
+    }
+
+    function setGanttLinkedHover(nodeId) {
+      document.querySelectorAll('.gantt-linked-hover').forEach(element => {
+        element.classList.remove('gantt-linked-hover');
+      });
+      if (!nodeId) return;
+      const escapedId = cssEscape(nodeId);
+      document.querySelectorAll([
+        `[data-tree-node="${escapedId}"]`,
+        `[data-gantt-row-node="${escapedId}"]`,
+        `[data-gantt-bar="${escapedId}"]`
+      ].join(', ')).forEach(element => {
+        element.classList.add('gantt-linked-hover');
+      });
+    }
+
+    function bindGanttLinkedHover() {
+      const frame = document.querySelector('.gantt-frame');
+      if (!frame) return;
+      frame.addEventListener('pointerover', event => {
+        const nodeId = ganttLinkedNodeId(event.target);
+        if (!nodeId || ganttLinkedNodeId(event.relatedTarget) === nodeId) return;
+        setGanttLinkedHover(nodeId);
+      });
+      frame.addEventListener('pointerout', event => {
+        if (state.ganttCreateDrag && state.ganttCreateDrag.type === 'bar') return;
+        const nodeId = ganttLinkedNodeId(event.target);
+        if (!nodeId) return;
+        const nextNodeId = ganttLinkedNodeId(event.relatedTarget);
+        if (nextNodeId === nodeId) return;
+        setGanttLinkedHover(nextNodeId);
+      });
+      frame.addEventListener('pointerleave', () => {
+        if (state.ganttCreateDrag && state.ganttCreateDrag.type === 'bar') return;
+        setGanttLinkedHover('');
+      });
+    }
+
     function bindGantt() {
       bindTreeRows();
+      bindGanttLinkedHover();
       document.querySelectorAll('[data-zoom]').forEach(button => {
         button.addEventListener('click', () => {
           state.ganttZoom = button.dataset.zoom;

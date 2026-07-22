@@ -2763,6 +2763,12 @@
       grid-template-columns: minmax(240px, 1fr) 136px 64px;
       align-items: center;
       overflow: hidden;
+      transition: background-color var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard);
+    }
+
+    .gantt-tree-row.gantt-linked-hover {
+      background-color: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface));
+      box-shadow: inset 3px 0 0 var(--color-accent);
     }
 
     .gantt-tree-row.shell-node-row {
@@ -2836,6 +2842,11 @@
       background-image: linear-gradient(to right, var(--color-border) 1px, transparent 1px);
       background-size: var(--day-width) 100%;
       z-index: 1;
+      transition: background-color var(--duration-fast) var(--ease-standard);
+    }
+
+    .gantt-row.gantt-linked-hover {
+      background-color: color-mix(in srgb, var(--color-accent) 9%, transparent);
     }
 
     .gantt-row.create-target {
@@ -3104,6 +3115,7 @@
       overflow: visible;
       cursor: grab;
       z-index: 5;
+      transition: border-color var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard);
     }
 
     .gantt-bar.readonly {
@@ -3117,6 +3129,11 @@
 
     .gantt-bar:hover {
       box-shadow: var(--shadow-md);
+    }
+
+    .gantt-bar.gantt-linked-hover {
+      border-color: color-mix(in srgb, var(--color-accent) 78%, var(--color-border));
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 24%, transparent), var(--shadow-md);
     }
 
     .gantt-progress {

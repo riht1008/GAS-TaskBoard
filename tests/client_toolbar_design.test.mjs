@@ -6,6 +6,7 @@ import vm from 'node:vm';
 const views = fs.readFileSync(new URL('../src/ClientRenderViews.html', import.meta.url), 'utf8');
 const styles = fs.readFileSync(new URL('../src/Styles.html', import.meta.url), 'utf8');
 const bindings = fs.readFileSync(new URL('../src/ClientBindings.html', import.meta.url), 'utf8');
+const actions = fs.readFileSync(new URL('../src/ClientActions.html', import.meta.url), 'utf8');
 const index = fs.readFileSync(new URL('../src/Index.html', import.meta.url), 'utf8');
 const utils = fs.readFileSync(new URL('../src/ClientUtils.html', import.meta.url), 'utf8');
 
@@ -42,6 +43,18 @@ test('gantt left header stays opaque above the translated task rows', () => {
   assert.match(styles, /\.gantt-left-body\s*\{[^}]*position:\s*relative;[^}]*z-index:\s*1;/s);
   assert.match(styles, /\.gantt-axis-left\s*\{[^}]*position:\s*relative;[^}]*z-index:\s*7;[^}]*background:\s*var\(--color-surface-raised\);/s);
   assert.match(styles, /\.gantt-axis-left span\s*\{[^}]*background:\s*var\(--color-surface-raised\);/s);
+});
+
+test('gantt task hover links the tree row, timeline row, and bar during pointer and drag operations', () => {
+  assert.match(bindings, /function setGanttLinkedHover\(nodeId\)/);
+  assert.match(bindings, /\[data-tree-node=.+\[data-gantt-row-node=.+\[data-gantt-bar=/s);
+  assert.match(bindings, /function bindGanttLinkedHover\(\)[\s\S]*pointerover[\s\S]*pointerout[\s\S]*pointerleave/);
+  assert.match(bindings, /bindTreeRows\(\);\s*bindGanttLinkedHover\(\);/);
+  assert.match(actions, /state\.ganttCreateDrag = \{ type: 'bar', nodeId: node\.id \};\s*setGanttLinkedHover\(node\.id\);/);
+  assert.match(actions, /state\.ganttCreateDrag = null;\s*setGanttLinkedHover\(''\);/);
+  assert.match(styles, /\.gantt-tree-row\.gantt-linked-hover\s*\{/);
+  assert.match(styles, /\.gantt-row\.gantt-linked-hover\s*\{/);
+  assert.match(styles, /\.gantt-bar\.gantt-linked-hover\s*\{/);
 });
 
 test('list inline pickers escape the scroll container through a viewport portal', () => {
