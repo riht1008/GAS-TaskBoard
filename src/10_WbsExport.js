@@ -571,12 +571,15 @@ function fillWbsStaticSections_(values, backgrounds, layout, context) {
   values[layout.milestoneStartRow - 1][1] = 'マイルストーン';
   wbsSetRowBackground_(backgrounds, layout.milestoneStartRow, 1, layout.totalCols, WBS_COLORS.section);
   wbsSetBackgrounds_(backgrounds, layout.milestoneBodyStartRow, 1, layout.milestoneBodyRows, layout.leftEndCol, WBS_COLORS.paleYellow);
-  wbsMilestonePlacements_(context.milestones, context.dateRange, layout.milestoneBodyRows - 1).forEach(function (placement) {
+  const milestoneSlotRows = 2;
+  const milestoneSlotCount = Math.max(1, Math.floor(layout.milestoneBodyRows / milestoneSlotRows));
+  wbsMilestonePlacements_(context.milestones, context.dateRange, milestoneSlotCount).forEach(function (placement) {
     const dateIndex = wbsDateIndex_(context.dateRange, placement.date);
     if (dateIndex >= 0) {
       const col = layout.ganttStartCol + dateIndex;
-      wbsAppendCellText_(values, layout.milestoneBodyStartRow + placement.lane, col, placement.name);
-      wbsAppendCellText_(values, layout.milestoneBodyStartRow + placement.lane + 1, col, '▼');
+      const nameRow = layout.milestoneBodyStartRow + placement.lane * milestoneSlotRows;
+      wbsAppendCellText_(values, nameRow, col, placement.name);
+      wbsAppendCellText_(values, nameRow + 1, col, '▼');
     }
   });
 

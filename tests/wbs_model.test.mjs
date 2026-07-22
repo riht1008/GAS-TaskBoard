@@ -170,10 +170,35 @@ test('template places milestones and dated meetings on gantt rows', () => {
   assert.notEqual(meetingDateIndex, -1);
   assert.equal(model.values[model.layout.milestoneBodyStartRow - 1][model.layout.ganttStartCol + milestoneDateIndex - 1], 'Kick Off');
   assert.equal(model.values[model.layout.milestoneBodyStartRow][model.layout.ganttStartCol + milestoneDateIndex - 1], '▼');
-  assert.equal(model.values[model.layout.milestoneBodyStartRow][model.layout.ganttStartCol + adjacentMilestoneDateIndex - 1], 'Review');
-  assert.equal(model.values[model.layout.milestoneBodyStartRow + 1][model.layout.ganttStartCol + adjacentMilestoneDateIndex - 1], '▼');
+  assert.equal(model.values[model.layout.milestoneBodyStartRow + 1][model.layout.ganttStartCol + adjacentMilestoneDateIndex - 1], 'Review');
+  assert.equal(model.values[model.layout.milestoneBodyStartRow + 2][model.layout.ganttStartCol + adjacentMilestoneDateIndex - 1], '▼');
   assert.equal(model.values[model.layout.meetingBodyStartRow - 1][2], '定例会 毎週月曜日');
   assert.equal(model.values[model.layout.meetingBodyStartRow - 1][model.layout.ganttStartCol + meetingDateIndex - 1], '▼');
+});
+
+test('two milestones on the same date use separate name and marker row pairs', () => {
+  const rows = baseRows();
+  rows.milestones = [
+    { MilestoneId: 'ms1', Name: '中間レビュー', Date: '2026-07-05', SortOrder: 1000 },
+    { MilestoneId: 'ms2', Name: '完了判定', Date: '2026-07-05', SortOrder: 2000 }
+  ];
+  const model = buildWbsModel_(rows, {
+    actorName: '佐藤',
+    now: '2026-07-03T00:00:00.000Z',
+    createdAt: '2026-07-03T00:00:00.000Z',
+    version: 1
+  });
+  const dateIndex = model.dateColumns.findIndex(date => date.date === '2026-07-05');
+  const colIndex = model.layout.ganttStartCol + dateIndex - 1;
+  const firstRowIndex = model.layout.milestoneBodyStartRow - 1;
+
+  assert.notEqual(dateIndex, -1);
+  assert.deepEqual([
+    model.values[firstRowIndex][colIndex],
+    model.values[firstRowIndex + 1][colIndex],
+    model.values[firstRowIndex + 2][colIndex],
+    model.values[firstRowIndex + 3][colIndex]
+  ], ['中間レビュー', '▼', '完了判定', '▼']);
 });
 
 test('recurring meeting rules expand biweekly and monthly occurrences', () => {
