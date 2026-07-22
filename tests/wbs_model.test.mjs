@@ -129,6 +129,24 @@ test('company and assignee columns expand within caps and wrap long task-owner t
   assert.match(wbsSource, /getRange\(block\.start, layout\.companyCol, block\.count, 2\)\.setWrap\(true\)/);
 });
 
+test('WBS leaves company and assignee blank for parent tasks but keeps leaf owners', () => {
+  const rows = baseRows();
+  rows.nodes.find(node => node.NodeId === 'c1').AssigneeIds = 'm1';
+  rows.nodes.find(node => node.NodeId === 'c1a1').AssigneeIds = 'm2';
+  const model = buildWbsModel_(rows, {
+    actorName: '佐藤',
+    now: '2026-07-03T00:00:00.000Z',
+    createdAt: '2026-07-03T00:00:00.000Z',
+    version: 1
+  });
+  const parentRow = model.taskRows.find(row => row.node.NodeId === 'c1');
+  const leafRow = model.taskRows.find(row => row.node.NodeId === 'c1a1');
+  assert.equal(model.values[parentRow.sheetRow - 1][model.layout.companyCol - 1], '');
+  assert.equal(model.values[parentRow.sheetRow - 1][model.layout.assigneeCol - 1], '');
+  assert.equal(model.values[leafRow.sheetRow - 1][model.layout.companyCol - 1], 'ACME');
+  assert.equal(model.values[leafRow.sheetRow - 1][model.layout.assigneeCol - 1], '田中');
+});
+
 test('template places milestones and dated meetings on gantt rows', () => {
   const rows = baseRows();
   rows.milestones = [
