@@ -352,6 +352,23 @@
         const raw = localStorage.getItem(key);
         const preferences = raw ? JSON.parse(raw) : null;
         state.collapsed = new Set(validCollapsedNodeIds_(preferences && preferences.collapsedNodeIds));
+        if (preferences && ['kanban', 'gantt', 'list'].includes(preferences.view)) {
+          state.view = preferences.view;
+        }
+        const treeWidth = Number(preferences && preferences.ganttTreeWidth);
+        if (Number.isFinite(treeWidth)) {
+          state.ganttTreeWidth = Math.max(GANTT_TREE_WIDTH_MIN, Math.min(GANTT_TREE_WIDTH_MAX, treeWidth));
+        }
+        if (preferences && ['day', 'week', 'month'].includes(preferences.ganttZoom)) {
+          state.ganttZoom = preferences.ganttZoom;
+        }
+        const scaleFactor = Number(preferences && preferences.ganttScaleFactor);
+        if (GANTT_SCALE_LEVELS.includes(scaleFactor)) {
+          state.ganttScaleFactor = scaleFactor;
+        }
+        if (preferences && typeof preferences.ganttTimelineCollapsed === 'boolean') {
+          state.ganttTimelineCollapsed = preferences.ganttTimelineCollapsed;
+        }
       } catch (error) {
         state.collapsed = new Set();
       }
@@ -364,7 +381,15 @@
       state.collapsed = new Set(collapsedNodeIds);
       state.viewPreferencesLoadedKey = key;
       try {
-        localStorage.setItem(key, JSON.stringify({ version: 1, collapsedNodeIds }));
+        localStorage.setItem(key, JSON.stringify({
+          version: 2,
+          collapsedNodeIds,
+          view: state.view,
+          ganttTreeWidth: state.ganttTreeWidth,
+          ganttZoom: state.ganttZoom,
+          ganttScaleFactor: state.ganttScaleFactor,
+          ganttTimelineCollapsed: state.ganttTimelineCollapsed
+        }));
       } catch (error) {
         // Display preferences are optional and must never block task operations.
       }

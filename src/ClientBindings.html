@@ -3,6 +3,7 @@
       app.querySelectorAll('[data-view]').forEach(button => {
         button.addEventListener('click', () => {
           state.view = button.dataset.view;
+          persistViewPreferences();
           render();
         });
       });
@@ -517,12 +518,14 @@
       document.querySelectorAll('[data-zoom]').forEach(button => {
         button.addEventListener('click', () => {
           state.ganttZoom = button.dataset.zoom;
+          persistViewPreferences();
           render();
         });
       });
       document.querySelectorAll('[data-gantt-scale-level]').forEach(button => {
         button.addEventListener('click', () => {
           state.ganttScaleFactor = nearestGanttScaleFactor(button.dataset.ganttScaleLevel);
+          persistViewPreferences();
           render();
         });
       });
@@ -603,6 +606,7 @@
       if (action === 'gantt-jump-today') return jumpGanttToToday();
       if (action === 'toggle-gantt-timeline') {
         state.ganttTimelineCollapsed = !state.ganttTimelineCollapsed;
+        persistViewPreferences();
         render();
         return;
       }

@@ -2324,6 +2324,7 @@
       const onUp = upEvent => {
         if (upEvent) applyWidth(upEvent.clientX);
         cleanup();
+        persistViewPreferences();
       };
       const onKeyDown = keyEvent => {
         if (keyEvent.key !== 'Escape') return;
