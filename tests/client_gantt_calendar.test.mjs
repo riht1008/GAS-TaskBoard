@@ -82,6 +82,14 @@ test('every day header in day zoom opens the period override dialog and today wi
   assert.match(styles, /\.axis-day-action\.saturday[\s\S]*\.axis-day-action\.holiday[\s\S]*\.axis-day-action\.today/);
 });
 
+test('milestone and meeting lanes stay fixed beneath the date axis while tasks scroll', () => {
+  assert.match(views, /<div class="gantt-left-timeline" style="height:\$\{timelineHeight\}px">[\s\S]*?timelineRows\.map\(renderGanttTimelineTreeRow\)/);
+  assert.match(views, /<div class="gantt-left-body" style="height:\$\{taskHeight\}px">[\s\S]*?displayRows\.map\(renderGanttTreeRow\)/);
+  assert.match(views, /<div class="gantt-timeline-sticky" style="height:\$\{timelineHeight\}px">[\s\S]*?renderGanttTimelineRows\(timelineRows, scale\)/);
+  assert.match(styles, /\.gantt-timeline-sticky\s*\{[\s\S]*?position:\s*sticky;[\s\S]*?top:\s*var\(--gantt-axis-height\);[\s\S]*?z-index:\s*7;/);
+  assert.match(styles, /\.gantt-left-timeline\s*\{[\s\S]*?z-index:\s*6;[\s\S]*?background:\s*var\(--color-surface\);/);
+});
+
 test('dependency routes leave minimum-width bars and intermediate bars before changing rows', () => {
   const source = views.slice(views.indexOf('    function ganttBarGeometry('));
   const toDay = value => Math.floor(Date.parse(`${value}T00:00:00.000Z`) / 86400000);

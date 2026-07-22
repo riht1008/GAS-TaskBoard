@@ -204,6 +204,7 @@
         state.lastSyncAt = new Date().toISOString();
       }
       rebuildIndexes();
+      restoreViewPreferences();
       recoverOwnedDraft_();
       if (!options.fromCache && state.unregistered && !state.joinPromptDismissed && !state.dialog) {
         openJoinDialog({ auto: true });
@@ -257,6 +258,7 @@
     }
 
     function persistLocalCache() {
+      persistViewPreferences();
       if (!state.currentEmail) return;
       try {
         const key = localCacheKey();
@@ -318,14 +320,66 @@
       return index[userCacheScopeKey()] || `${LOCAL_CACHE_PREFIX}:scope:${encodeURIComponent(userCacheScopeKey())}`;
     }
 
+    function viewPreferencesKey() {
+      if (!state.rootId || !state.currentEmail) return '';
+      const scope = encodeURIComponent(cacheScopeKey());
+      const project = encodeURIComponent(String(state.rootId));
+      const user = encodeURIComponent(String(state.currentEmail).toLowerCase());
+      return `${LOCAL_VIEW_PREFERENCES_PREFIX}:${scope}:${project}:${user}`;
+    }
+
+    function validCollapsedNodeIds_(nodeIds) {
+      const seen = new Set();
+      return (Array.isArray(nodeIds) ? nodeIds : [])
+        .map(nodeId => String(nodeId || ''))
+        .filter(nodeId => {
+          const node = state.nodesById.get(nodeId);
+          if (!nodeId || seen.has(nodeId) || nodeId === state.rootId || !node || !node.hasChildren) return false;
+          seen.add(nodeId);
+          return true;
+        });
+    }
+
+    function restoreViewPreferences() {
+      const key = viewPreferencesKey();
+      if (!key) return;
+      if (state.viewPreferencesLoadedKey === key) {
+        state.collapsed = new Set(validCollapsedNodeIds_(Array.from(state.collapsed)));
+        return;
+      }
+      state.viewPreferencesLoadedKey = key;
+      try {
+        const raw = localStorage.getItem(key);
+        const preferences = raw ? JSON.parse(raw) : null;
+        state.collapsed = new Set(validCollapsedNodeIds_(preferences && preferences.collapsedNodeIds));
+      } catch (error) {
+        state.collapsed = new Set();
+      }
+    }
+
+    function persistViewPreferences() {
+      const key = viewPreferencesKey();
+      if (!key) return;
+      const collapsedNodeIds = validCollapsedNodeIds_(Array.from(state.collapsed));
+      state.collapsed = new Set(collapsedNodeIds);
+      state.viewPreferencesLoadedKey = key;
+      try {
+        localStorage.setItem(key, JSON.stringify({ version: 1, collapsedNodeIds }));
+      } catch (error) {
+        // Display preferences are optional and must never block task operations.
+      }
+    }
+
     function clearLocalCache(options = {}) {
       try {
         const key = localCacheKey();
         localStorage.removeItem(key);
+        const preferencesKey = viewPreferencesKey();
+        if (preferencesKey) localStorage.removeItem(preferencesKey);
         const index = readLocalCacheIndex();
         delete index[userCacheScopeKey()];
         localStorage.setItem(LOCAL_CACHE_INDEX_KEY, JSON.stringify(index));
-        if (!options.silent) showToast('このブラウザのローカルキャッシュを削除しました', 'success');
+        if (!options.silent) showToast('このブラウザのローカルキャッシュと表示設定を削除しました', 'success');
       } catch (error) {
         if (!options.silent) showToast('ローカルキャッシュを削除できませんでした', 'error');
       }

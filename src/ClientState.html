@@ -54,6 +54,7 @@
       showGroupsInKanban: false,
       kanbanMemberRailCollapsed: true,
       collapsed: new Set(),
+      viewPreferencesLoadedKey: '',
       drawerNodeId: '',
       drawerReturnFocus: null,
       detailDraftNodeId: '',
@@ -151,6 +152,7 @@
     const LOCAL_CACHE_PREFIX = 'gasTaskManager.cache.v2';
     const LOCAL_CACHE_INDEX_KEY = 'gasTaskManager.cache.index.v2';
     const LOCAL_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+    const LOCAL_VIEW_PREFERENCES_PREFIX = 'gasTaskManager.viewPreferences.v1';
     const NOTIFICATION_MEMORY_TTL_MS = 30 * 1000;
     const SERVER_CALL_TIMEOUT_MS = 60000;
     const PROJECT_DATE_MIN = '2000-01-01';

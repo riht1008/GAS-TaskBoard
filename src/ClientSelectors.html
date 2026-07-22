@@ -116,7 +116,13 @@
     function toggleCollapsed(nodeId) {
       if (state.collapsed.has(nodeId)) state.collapsed.delete(nodeId);
       else state.collapsed.add(nodeId);
+      persistViewPreferences();
       render();
+    }
+
+    function expandNode(nodeId) {
+      if (!nodeId || !state.collapsed.delete(nodeId)) return;
+      persistViewPreferences();
     }
 
     function visibleAnchor(nodeId, visibleSet) {

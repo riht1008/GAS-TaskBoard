@@ -1073,7 +1073,7 @@
           <div><strong>直近の送信状態</strong><span>${settings.lastResponseCode ? `HTTP ${Number(settings.lastResponseCode)}` : 'まだ送信履歴がありません'}</span></div>
           ${settings.lastSuccessAt ? `<div class="meta-line">最終成功: ${h(formatDateTime(settings.lastSuccessAt))}</div>` : ''}
           ${settings.lastErrorAt ? `<div class="meta-line error">最終失敗: ${h(formatDateTime(settings.lastErrorAt))} · ${h(settings.lastError || '')}</div>` : ''}
-          <button class="button secondary compact" type="button" data-action="clear-local-cache">このブラウザのローカルキャッシュを削除</button>
+          <button class="button secondary compact" type="button" data-action="clear-local-cache">ローカルキャッシュと表示設定を削除</button>
         </section>
       `;
     }

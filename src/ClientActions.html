@@ -206,7 +206,7 @@
           state.nodes.push(node);
           target = node;
         }
-        state.collapsed.delete(target.parentId);
+        expandNode(target.parentId);
         rollupLocalParentStatuses([target.id, target.parentId]);
       }, {
         rollback: () => {
@@ -1167,7 +1167,7 @@
           state.nodes.push(node);
           target = node;
         }
-        state.collapsed.delete(parentId);
+        expandNode(parentId);
         rollupLocalParentStatuses([target.id, parentId]);
         state.drawerNodeId = nodeId;
         initializeDetailDraft(target);
@@ -1591,7 +1591,7 @@
           showToast('タスクを復元しました', 'success');
           const restored = state.nodesById.get(restoredId);
           if (restored) {
-            state.collapsed.delete(restored.parentId || '');
+            expandNode(restored.parentId || '');
             openNode(restoredId);
           }
         }

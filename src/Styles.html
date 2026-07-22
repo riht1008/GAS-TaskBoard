@@ -2610,6 +2610,13 @@
       will-change: transform;
     }
 
+    .gantt-left-timeline {
+      position: relative;
+      z-index: 6;
+      overflow: hidden;
+      background: var(--color-surface);
+    }
+
     .gantt-right {
       min-height: 0;
       overflow: auto;
@@ -2812,6 +2819,14 @@
     .gantt-canvas {
       position: relative;
       min-height: 160px;
+    }
+
+    .gantt-timeline-sticky {
+      position: sticky;
+      top: var(--gantt-axis-height);
+      z-index: 7;
+      width: 100%;
+      background: var(--color-surface);
     }
 
     .gantt-row {

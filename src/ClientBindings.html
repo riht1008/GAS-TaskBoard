@@ -473,7 +473,7 @@
           clearTaskDropIndicators();
           state.draggedNodeId = '';
           if (plan && nodeId) {
-            if (plan.newParentId) state.collapsed.delete(plan.newParentId);
+            if (plan.newParentId) expandNode(plan.newParentId);
             moveNodeTo(nodeId, plan.newParentId, plan.newSortOrder);
           }
         });

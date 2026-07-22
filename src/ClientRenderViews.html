@@ -823,8 +823,10 @@
           <div class="gantt-frame" style="--gantt-tree-width:${treeWidth}px">
             <div class="gantt-left">
               <div class="gantt-axis-left"><span>タスク名</span><span>日付範囲</span><span>日数</span></div>
-              <div class="gantt-left-body" style="height:${height}px">
+              <div class="gantt-left-timeline" style="height:${timelineHeight}px">
                 ${timelineRows.map(renderGanttTimelineTreeRow).join('')}
+              </div>
+              <div class="gantt-left-body" style="height:${taskHeight}px">
                 ${displayRows.map(renderGanttTreeRow).join('')}
               </div>
             </div>
@@ -833,7 +835,9 @@
               <div class="gantt-axis" style="width:${scale.width}px">${renderAxisTicks(scale)}</div>
               <div class="gantt-canvas" style="width:${scale.width}px;height:${height}px;--day-width:${scale.dayWidth}px">
                 ${renderNonWorkingDayBands(scale, height)}
-                ${renderGanttTimelineRows(timelineRows, scale)}
+                <div class="gantt-timeline-sticky" style="height:${timelineHeight}px">
+                  ${renderGanttTimelineRows(timelineRows, scale)}
+                </div>
                 ${renderGanttInteractionRows(displayRows, emptyLaneCount, timelineHeight)}
                 ${todayLeft >= 0 && todayLeft < scale.width ? `<div class="today-column" style="left:${todayLeft}px;width:${scale.dayWidth}px;height:${height}px" aria-hidden="true"></div>` : ''}
                 ${renderGanttArrows(displayRows, scale, height, timelineHeight)}
