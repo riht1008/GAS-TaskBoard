@@ -385,6 +385,8 @@ var WBS_PROGRESS_COLORS = [
   { value: 0.75, color: '#f8dec3' },
   { value: 0.9, color: '#fcf1d1' }
 ];
+var WBS_COMPANY_COLUMN_WIDTH = { min: 96, max: 180 };
+var WBS_ASSIGNEE_COLUMN_WIDTH = { min: 108, max: 200 };
 
 function buildWbsLayout_(maxDepth, meetingCount, taskCount) {
   const noCol = 1;
@@ -799,8 +801,18 @@ function applyWbsTemplateFormats_(sheet, model, rowCount, colCount) {
   sheet.setColumnWidth(layout.taskDisplayCol, 149);
   sheet.setColumnWidth(layout.deliverableCol, 150);
   sheet.setColumnWidth(layout.noteCol, 87);
-  sheet.setColumnWidth(layout.companyCol, 46);
-  sheet.setColumnWidth(layout.assigneeCol, 63);
+  sheet.setColumnWidth(layout.companyCol, wbsAdaptiveTextColumnWidth_(
+    model,
+    layout.companyCol,
+    WBS_COMPANY_COLUMN_WIDTH.min,
+    WBS_COMPANY_COLUMN_WIDTH.max
+  ));
+  sheet.setColumnWidth(layout.assigneeCol, wbsAdaptiveTextColumnWidth_(
+    model,
+    layout.assigneeCol,
+    WBS_ASSIGNEE_COLUMN_WIDTH.min,
+    WBS_ASSIGNEE_COLUMN_WIDTH.max
+  ));
   sheet.setColumnWidths(layout.planStartCol, 2, 75);
   sheet.setColumnWidth(layout.planDaysCol, 31);
   sheet.setColumnWidths(layout.actualStartCol, 2, 75);
@@ -810,6 +822,22 @@ function applyWbsTemplateFormats_(sheet, model, rowCount, colCount) {
   if (model.dateColumns.length) {
     sheet.setColumnWidths(layout.ganttStartCol, model.dateColumns.length, 36);
   }
+  wbsRowBlocks_(model.normalRows || []).forEach(function (block) {
+    sheet.getRange(block.start, layout.companyCol, block.count, 2).setWrap(true);
+  });
+}
+
+function wbsAdaptiveTextColumnWidth_(model, column, minWidth, maxWidth) {
+  let maxUnits = 0;
+  (model.taskRows || []).forEach(function (row) {
+    const value = model.values[row.sheetRow - 1][column - 1];
+    const units = Array.from(wbsClean_(value)).reduce(function (total, character) {
+      return total + (/^[\x00-\xff]$/.test(character) ? 0.58 : 1);
+    }, 0);
+    maxUnits = Math.max(maxUnits, units);
+  });
+  const estimatedWidth = Math.ceil(maxUnits * 12 + 20);
+  return Math.max(minWidth, Math.min(maxWidth, estimatedWidth));
 }
 
 function applyWbsTemplateBorders_(sheet, model) {
@@ -1634,6 +1662,7 @@ if (typeof module !== 'undefined' && module.exports) {
     deriveActuals_: deriveActuals_,
     filterWbsTree_: filterWbsTree_,
     computeWbsDerived_: computeWbsDerived_,
+    wbsAdaptiveTextColumnWidth_: wbsAdaptiveTextColumnWidth_,
     wbsDateTextInTimeZone_: wbsDateTextInTimeZone_,
     wbsColumnLetter_: wbsColumnLetter_
   };

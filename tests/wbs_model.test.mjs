@@ -1,13 +1,16 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import fs from 'node:fs';
 import test from 'node:test';
 
 const require = createRequire(import.meta.url);
 const {
   buildWbsModel_,
   deriveActuals_,
+  wbsAdaptiveTextColumnWidth_,
   wbsColumnLetter_
 } = require('../src/10_WbsExport.js');
+const wbsSource = fs.readFileSync(new URL('../src/10_WbsExport.js', import.meta.url), 'utf8');
 
 const statusColumns = [
   { ColumnId: 'todo', Name: '未着手', SortOrder: 1000, IsDoneColumn: false },
@@ -108,6 +111,22 @@ test('template layout keeps management columns fixed and places deep task names'
   assert.equal(model.values[model.layout.headerRow2 - 1][0], 'No.');
   assert.equal(model.values[model.layout.headerRow2 - 1][5], 'タスク');
   assert.equal(model.values[model.layout.headerRow2 - 1][17], '完了フラグ');
+});
+
+test('company and assignee columns expand within caps and wrap long task-owner text', () => {
+  const model = {
+    taskRows: [{ sheetRow: 2 }, { sheetRow: 3 }],
+    values: [
+      ['', ''],
+      ['短い会社', '佐藤'],
+      ['株式会社とても長いプロジェクト支援サービス', '佐藤・田中・鈴木・高橋・伊藤']
+    ]
+  };
+  const companyWidth = wbsAdaptiveTextColumnWidth_(model, 1, 96, 180);
+  const assigneeWidth = wbsAdaptiveTextColumnWidth_(model, 2, 108, 200);
+  assert.ok(companyWidth > 96 && companyWidth <= 180);
+  assert.ok(assigneeWidth > 108 && assigneeWidth <= 200);
+  assert.match(wbsSource, /getRange\(block\.start, layout\.companyCol, block\.count, 2\)\.setWrap\(true\)/);
 });
 
 test('template places milestones and dated meetings on gantt rows', () => {
