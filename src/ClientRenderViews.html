@@ -401,7 +401,7 @@
     }
 
     function renderFilters() {
-      const activeFields = ['parentId', 'statusIds', 'assigneeId', 'priority', 'date']
+      const activeFields = ['parentId', 'statusIds', 'assigneeId', 'priority', 'wbsInclusion', 'date']
         .filter(field => isFilterFieldActive(field))
         .filter(field => field !== 'assigneeId' || !state.currentMember || state.filters.assigneeId !== state.currentMember.id);
       const openField = filterFieldFromControlId(state.openDropdown);
@@ -471,6 +471,20 @@
           selected: state.filters.priority,
           options: [{ value: '', label: 'すべての優先度' }].concat(priorityOptions())
         });
+      } else if (field === 'wbsInclusion') {
+        picker = renderDropdown({
+          scope: 'filters',
+          field,
+          plain: true,
+          triggerHtml,
+          placeholder: 'WBS反映を選択',
+          selected: state.filters.wbsInclusion,
+          options: [
+            { value: '', label: 'すべて' },
+            { value: 'included', label: 'WBS対象' },
+            { value: 'excluded', label: 'WBS対象外' }
+          ]
+        });
       } else if (field === 'date') {
         picker = renderDatePicker({
           scope: 'filters',
@@ -496,6 +510,7 @@
         { field: 'statusIds', label: 'ステータス' },
         { field: 'assigneeId', label: '担当者' },
         { field: 'priority', label: '優先度' },
+        { field: 'wbsInclusion', label: 'WBS反映' },
         { field: 'date', label: '期間' }
       ];
       const id = 'filter:add';
@@ -530,7 +545,7 @@
       const text = String(id || '');
       if (!text.startsWith('filters:')) return '';
       const field = text.slice('filters:'.length);
-      return ['parentId', 'statusIds', 'assigneeId', 'priority', 'date'].includes(field) ? field : '';
+      return ['parentId', 'statusIds', 'assigneeId', 'priority', 'wbsInclusion', 'date'].includes(field) ? field : '';
     }
 
     function isFilterFieldActive(field) {
@@ -546,6 +561,7 @@
           statusIds: 'ステータスを選択',
           assigneeId: '担当者を選択',
           priority: '優先度を選択',
+          wbsInclusion: 'WBS反映を選択',
           date: '期間を選択'
         }[field] || '条件を選択';
       }
@@ -562,6 +578,7 @@
         return member ? `担当: ${member.name}` : '担当';
       }
       if (field === 'priority') return `優先度: ${priorityLabel(state.filters.priority)}`;
+      if (field === 'wbsInclusion') return state.filters.wbsInclusion === 'excluded' ? 'WBS: 対象外' : 'WBS: 対象';
       if (field === 'date') return `期間: ${formatDateFilterLabel()}`;
       return '条件';
     }

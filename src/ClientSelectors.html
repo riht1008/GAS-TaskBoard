@@ -14,6 +14,8 @@
       if ((state.filters.statusIds || []).length && !state.filters.statusIds.includes(node.statusColumnId)) return false;
       if (state.filters.assigneeId && !node.assigneeIds.includes(state.filters.assigneeId)) return false;
       if (state.filters.priority && node.priority !== state.filters.priority) return false;
+      if (state.filters.wbsInclusion === 'included' && isNodeWbsExcluded(node)) return false;
+      if (state.filters.wbsInclusion === 'excluded' && !isNodeWbsExcluded(node)) return false;
       if (state.filters.dateStart && state.filters.dateEnd) {
         if (!node.startDate || !node.endDate) return false;
         if (node.endDate < state.filters.dateStart || node.startDate > state.filters.dateEnd) return false;
