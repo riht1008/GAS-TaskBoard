@@ -88,15 +88,125 @@ global.normalizePriority_ = value => value || 'Mid';
 global.normalizeIncludeInWbs_ = value => value !== false;
 global.normalizeSchedule_ = (startDate, endDate) => ({ startDate: startDate || '', endDate: endDate || '' });
 global.normalizeActualDates_ = (startDate, endDate) => ({ startDate: startDate || '', endDate: endDate || '' });
+global.sortByOrder_ = rows => rows.slice().sort((a, b) => Number(a.SortOrder) - Number(b.SortOrder));
+global.nodeHasDependency_ = (nodeId, dependencies) => dependencies.some(dependency =>
+  dependency.PredecessorNodeId === nodeId || dependency.SuccessorNodeId === nodeId
+);
+global.optionalName_ = value => String(value || '').trim();
+global.nextSortOrder_ = siblings => siblings.length
+  ? Math.max(...siblings.map(node => Number(node.SortOrder) || 0)) + 1000
+  : 1000;
+global.splitCsv_ = value => String(value || '').split(',').map(item => item.trim()).filter(Boolean);
+global.DRAFT_TTL_MS = 60000;
+global.buildAssignmentNotification_ = () => null;
+global.postToSlack_ = () => {};
+global.attachPublicSlackSettings_ = () => {};
+let generatedId = 0;
+global.newId_ = () => `generated-${++generatedId}`;
 
 const require = createRequire(import.meta.url);
-const { rollupParentStatuses_, restoreNode, deleteNode, cleanupExpiredDraftNodes_, applyNodePatch_, nodeBaseVersionMatches_ } = require('../src/01_NodeApi.js');
+const { addNodes, rollupParentStatuses_, restoreNode, deleteNode, cleanupExpiredDraftNodes_, applyNodePatch_, nodeBaseVersionMatches_ } = require('../src/01_NodeApi.js');
 
 const statusColumns = [
   { ColumnId: 'todo', Name: '未着手', SortOrder: 1000, IsDoneColumn: false, IsInProgressColumn: false },
   { ColumnId: 'doing', Name: '進行中', SortOrder: 2000, IsDoneColumn: false, IsInProgressColumn: true },
   { ColumnId: 'done', Name: '完了', SortOrder: 3000, IsDoneColumn: true, IsInProgressColumn: false }
 ];
+
+test('addNodes appends many tasks in one sheet write and one snapshot read', () => {
+  mockRows = {
+    statusColumns,
+    members: [{ MemberId: 'actor-1' }, { MemberId: 'member-2' }],
+    dependencies: [],
+    nodes: [
+      { NodeId: 'root', ParentId: '', Name: 'Root', StatusColumnId: 'todo', SortOrder: 1000 }
+    ]
+  };
+  writes = [];
+  let snapshotReads = 0;
+  let appendCalls = 0;
+  global.readNodeSnapshot_ = () => {
+    snapshotReads += 1;
+    return mockRows;
+  };
+  global.appendObjects_ = (sheetName, objects) => {
+    appendCalls += 1;
+    assert.equal(sheetName, 'Nodes');
+    objects.forEach((object, index) => {
+      object.__row = index + 2;
+    });
+    return objects;
+  };
+
+  const result = addNodes({
+    requestId: 'batch-1',
+    nodes: [
+      { nodeId: 'batch-a', parentId: 'root', name: 'A' },
+      { nodeId: 'batch-b', parentId: 'root', name: 'B', assigneeIds: ['member-2'] },
+      { nodeId: 'batch-c', parentId: 'root', name: 'C' }
+    ]
+  });
+
+  assert.equal(snapshotReads, 1);
+  assert.equal(appendCalls, 1);
+  assert.equal(result.createdCount, 3);
+  assert.deepEqual(result.createdNodeIds, ['batch-a', 'batch-b', 'batch-c']);
+  assert.deepEqual(
+    mockRows.nodes.filter(node => node.ParentId === 'root').map(node => node.SortOrder),
+    [1000, 2000, 3000]
+  );
+});
+
+test('addNodes validates the whole batch before writing any rows', () => {
+  mockRows = {
+    statusColumns,
+    members: [{ MemberId: 'actor-1' }],
+    dependencies: [],
+    nodes: [
+      { NodeId: 'root', ParentId: '', Name: 'Root', StatusColumnId: 'todo', SortOrder: 1000 }
+    ]
+  };
+  let appendCalls = 0;
+  global.readNodeSnapshot_ = () => mockRows;
+  global.appendObjects_ = () => {
+    appendCalls += 1;
+  };
+
+  assert.throws(() => addNodes({
+    nodes: [
+      { nodeId: 'valid', parentId: 'root', name: 'Valid' },
+      { nodeId: 'invalid', parentId: 'missing', name: 'Invalid' }
+    ]
+  }), /2件目の親ノード/);
+  assert.equal(appendCalls, 0);
+});
+
+test('addNodes accepts an idempotent replay without appending duplicates', () => {
+  mockRows = {
+    statusColumns,
+    members: [{ MemberId: 'actor-1' }],
+    dependencies: [],
+    nodes: [
+      { NodeId: 'root', ParentId: '', Name: 'Root', StatusColumnId: 'todo', SortOrder: 1000 },
+      { NodeId: 'existing', ParentId: 'root', Name: 'Existing', StatusColumnId: 'todo', SortOrder: 1000 }
+    ]
+  };
+  let appendCalls = 0;
+  global.readNodeSnapshot_ = () => mockRows;
+  global.appendObjects_ = (_sheetName, objects) => {
+    appendCalls += 1;
+    return objects;
+  };
+
+  const result = addNodes({
+    requestId: 'retry',
+    nodes: [{ nodeId: 'existing', parentId: 'root', name: 'Existing' }]
+  });
+
+  assert.equal(appendCalls, 0);
+  assert.equal(result.createdCount, 0);
+  assert.deepEqual(result.createdNodeIds, ['existing']);
+});
 
 test('existing node mutations require an explicit matching base version', () => {
   const node = { UpdatedAt: 'v2', DraftOwner: '' };

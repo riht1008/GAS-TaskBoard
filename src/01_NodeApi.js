@@ -101,6 +101,161 @@ function addNode(payload) {
   return result;
 }
 
+function addNodes(payload) {
+  payload = payload || {};
+  const source = Array.isArray(payload.nodes) ? payload.nodes : [];
+  if (!source.length || source.length > 100) {
+    throw new Error('一括追加するタスクは1〜100件で指定してください。');
+  }
+
+  const assignmentNotifications = [];
+  const result = withLock_(function () {
+    requireSchemaExists_();
+    const rows = readNodeSnapshot_();
+    const actor = requireCurrentMember_(rows.members);
+    const active = activeNodes_(rows.nodes);
+    validateNodeTree_(active);
+    const nodesById = byId_(active, 'NodeId');
+    const allNodesById = byId_(rows.nodes, 'NodeId');
+    const statusColumns = sortByOrder_(rows.statusColumns);
+    if (!statusColumns.length) {
+      throw new Error('ステータス列がありません。');
+    }
+
+    const now = nowIso_();
+    const seenNodeIds = {};
+    const createdNodeIds = [];
+    const insertedNodes = [];
+    const parentIds = [];
+
+    source.forEach(function (rawItem, index) {
+      const item = rawItem || {};
+      const itemLabel = 'タスク' + (index + 1) + '件目';
+      const parentId = cleanString_(item.parentId);
+      const parent = nodesById[parentId];
+      if (!parent) {
+        throw new Error(itemLabel + 'の親ノードが見つかりません。');
+      }
+      if (cleanString_(parent.DraftOwner)) {
+        throw new Error(itemLabel + 'は作成途中のタスクへ追加できません。先に親タスクの名称を保存してください。');
+      }
+      if (nodeHasDependency_(parentId, rows.dependencies, nodesById)) {
+        throw new Error(itemLabel + 'は依存関係を持つ末端ノードへ追加できません。');
+      }
+
+      const isShell = item.isShell === true;
+      const name = isShell ? optionalName_(item.name) : requireName_(item.name);
+      const requestedNodeId = cleanString_(item.nodeId || item.clientNodeId);
+      let nodeId = requestedNodeId || newId_();
+      while (!requestedNodeId && allNodesById[nodeId]) {
+        nodeId = newId_();
+      }
+      if (seenNodeIds[nodeId]) {
+        throw new Error(itemLabel + 'のNodeIdが一括追加内で重複しています。');
+      }
+      seenNodeIds[nodeId] = true;
+
+      const existingNode = allNodesById[nodeId];
+      if (existingNode) {
+        if (cleanString_(existingNode.DeletedAt)) {
+          throw new Error(itemLabel + 'と同じIDの削除済みノードが既に存在します。');
+        }
+        if (cleanString_(existingNode.ParentId) !== parentId || cleanString_(existingNode.Name) !== name) {
+          throw new Error(itemLabel + 'のNodeIdは別のノードで使用されています。');
+        }
+        createdNodeIds.push(nodeId);
+        parentIds.push(parentId);
+        return;
+      }
+
+      const schedule = normalizeSchedule_(item.startDate, item.endDate);
+      const node = {
+        NodeId: nodeId,
+        ParentId: parentId,
+        Name: name,
+        StatusColumnId: validateStatusId_(item.statusColumnId || statusColumns[0].ColumnId, rows.statusColumns),
+        AssigneeIds: normalizeAssigneeIds_(item.assigneeIds || [], rows.members).join(','),
+        Priority: normalizePriority_(item.priority),
+        StartDate: schedule.startDate,
+        EndDate: schedule.endDate,
+        Description: cleanString_(item.description),
+        SortOrder: nextSortOrder_(active.filter(function (candidate) { return candidate.ParentId === parentId; })),
+        CreatedAt: now,
+        UpdatedAt: now,
+        UpdatedBy: actor.MemberId,
+        DeletedAt: '',
+        DeletedBy: '',
+        Deliverable: cleanString_(item.deliverable),
+        Note: cleanString_(item.note),
+        Progress: '',
+        IncludeInWbs: item.includeInWbs !== false,
+        DraftOwner: isShell ? actor.MemberId : '',
+        DraftExpiresAt: isShell ? new Date(Date.now() + DRAFT_TTL_MS).toISOString() : '',
+        ActualStartDate: '',
+        ActualEndDate: ''
+      };
+
+      rows.nodes.push(node);
+      active.push(node);
+      nodesById[nodeId] = node;
+      allNodesById[nodeId] = node;
+      insertedNodes.push(node);
+      createdNodeIds.push(nodeId);
+      parentIds.push(parentId);
+    });
+
+    validateNodeTree_(active);
+    const rollupWriteMap = {};
+    const rollupIds = rollupParentStatuses_(rows, unique_(parentIds), actor.MemberId, rollupWriteMap);
+    if (insertedNodes.length) {
+      appendObjects_(SHEET.NODES, insertedNodes);
+    }
+    if (rollupIds.length) {
+      writeObjects_(SHEET.NODES, Object.keys(rollupWriteMap).map(function (id) { return rollupWriteMap[id]; }));
+    }
+
+    const affectedIds = unique_(createdNodeIds
+      .concat(parentIds)
+      .concat(rollupIds)
+      .concat(ancestorIdsForMany_(createdNodeIds.concat(parentIds).concat(rollupIds), active)));
+
+    insertedNodes.forEach(function (node) {
+      const assignedIds = splitCsv_(node.AssigneeIds).filter(function (id) {
+        return id !== cleanString_(actor.MemberId);
+      });
+      if (!assignedIds.length) {
+        return;
+      }
+      try {
+        const assignedSet = {};
+        assignedIds.forEach(function (id) { assignedSet[id] = true; });
+        const assignedMembers = rows.members.filter(function (member) {
+          return !!assignedSet[cleanString_(member.MemberId)];
+        });
+        const notification = buildAssignmentNotification_(node, actor, assignedMembers, rows);
+        if (notification) {
+          assignmentNotifications.push(notification);
+        }
+      } catch (error) {
+        // Task creation succeeds even when notification payload construction fails.
+      }
+    });
+
+    return makeMutationPayload_(rows, affectedIds, payload.requestId, {
+      createdNodeIds: createdNodeIds,
+      createdCount: insertedNodes.length
+    });
+  });
+
+  assignmentNotifications.forEach(function (notification) {
+    postToSlack_(notification, { type: 'assignment' });
+  });
+  if (assignmentNotifications.length) {
+    attachPublicSlackSettings_(result);
+  }
+  return result;
+}
+
 function saveNode(payload) {
   payload = payload || {};
   let statusNotification = null;
@@ -715,6 +870,7 @@ function cleanupExpiredDraftNodes_(rows, nowMs) {
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
+    addNodes: addNodes,
     rollupParentStatuses_: rollupParentStatuses_,
     inProgressStatusColumnId_: inProgressStatusColumnId_,
     deleteNode: deleteNode,
