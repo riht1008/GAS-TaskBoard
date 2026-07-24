@@ -39,6 +39,11 @@ test('kanban actions share the filter row and gantt scale uses a stepper', () =>
   assert.doesNotMatch(views, /class=\"gantt-scale-steps\"/);
 });
 
+test('kanban cards retain the same hierarchy order as the list view', () => {
+  assert.match(views, /const filteredIds = new Set\(filteredNodes\(\)\.map\(node => node\.id\)\);/);
+  assert.match(views, /const visibleCards = treeOrderedNodes\(\)\s*\.filter\(node => filteredIds\.has\(node\.id\)\)/);
+});
+
 test('gantt left header stays opaque above the translated task rows', () => {
   assert.match(styles, /\.gantt-left-body\s*\{[^}]*position:\s*relative;[^}]*z-index:\s*1;/s);
   assert.match(styles, /\.gantt-axis-left\s*\{[^}]*position:\s*relative;[^}]*z-index:\s*7;[^}]*background:\s*var\(--color-surface-raised\);/s);

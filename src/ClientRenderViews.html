@@ -599,7 +599,9 @@
     }
 
     function renderKanban() {
-      const visibleCards = filteredNodes()
+      const filteredIds = new Set(filteredNodes().map(node => node.id));
+      const visibleCards = treeOrderedNodes()
+        .filter(node => filteredIds.has(node.id))
         .filter(node => node.id !== state.rootId)
         .filter(node => state.showGroupsInKanban || node.isLeaf);
       const filteredEmpty = hasActiveFilters() && !visibleCards.length;

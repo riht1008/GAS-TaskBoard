@@ -58,6 +58,9 @@ test('detail drawer uses one task title and compact property rows', () => {
   assert.match(panels, /aria-label="タスク詳細"/);
   assert.match(panels, /detail-floating-actions/);
   assert.doesNotMatch(panels, /detail-toolbar-title/);
+  assert.match(panels, /const breadcrumbAncestors = ancestorChain\(node\.id\)/);
+  assert.match(panels, /class="detail-breadcrumb"/);
+  assert.match(styles, /\.detail-breadcrumb \{[\s\S]*color: var\(--color-text-tertiary\);[\s\S]*text-overflow: ellipsis/);
   assert.match(panels, /aria-label="タスク名"/);
   assert.match(panels, /function renderDetailPropertyRow/);
   assert.match(panels, /field: 'statusColumnId'[\s\S]{0,180}plain: true/);

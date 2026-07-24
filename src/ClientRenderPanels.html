@@ -4,6 +4,14 @@
       if (!node) return '';
       ensureDetailDraft(node.id);
       const draft = state.detailDraft;
+      const breadcrumbAncestors = ancestorChain(node.id)
+        .filter(nodeId => nodeId !== state.rootId)
+        .reverse()
+        .map(nodeId => state.nodesById.get(nodeId))
+        .filter(Boolean);
+      const breadcrumbLabel = breadcrumbAncestors.length
+        ? breadcrumbAncestors.map(ancestor => ancestor.name || '新しいタスク').concat(draft.name || node.name || '新しいタスク').join(' > ')
+        : '';
       const comments = state.comments.get(node.id);
       const childNodes = childrenOf(node.id);
       const parent = node.parentId ? state.nodesById.get(node.parentId) : null;
@@ -31,6 +39,7 @@
             <div class="drawer-body detail-drawer-body">
               <main class="detail-main">
                 <section class="detail-title-section">
+                  ${breadcrumbLabel ? `<div class="detail-breadcrumb" title="${h(breadcrumbLabel)}" aria-label="タスク階層">${h(breadcrumbLabel)}</div>` : ''}
                   <textarea class="textarea task-name-textarea detail-name-textarea" rows="1" aria-label="タスク名" data-detail-name-input data-draft-scope="detail" data-draft-field="name" ${state.currentMember ? '' : 'readonly'}>${h(draft.name)}</textarea>
                 </section>
                 <section class="detail-content-section detail-description-section">
