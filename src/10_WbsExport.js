@@ -235,8 +235,29 @@ function meetingShortDate_(dateText) {
 function exportWbs() {
   requireSchemaExists_();
   const actor = requireCurrentMember_();
+  return exportWbsForActor_(actor, 'manual');
+}
+
+function scheduledExportWbs() {
+  requireSchemaExists_();
+  const email = normalizeEmail_(Session.getEffectiveUser().getEmail());
+  if (!email) {
+    throw new Error('定期WBS出力の実行ユーザーを取得できません。');
+  }
+  const members = readObjects_(SHEET.MEMBERS);
+  const actor = members.find(function (member) {
+    return normalizeEmail_(member.Email) === email;
+  });
+  if (!actor) {
+    throw new Error('定期WBS出力のトリガー作成者がメンバー登録されていません。');
+  }
+  return exportWbsForActor_(actor, 'scheduled');
+}
+
+function exportWbsForActor_(actor, source) {
   const guardToken = acquireWbsExportGuard_();
   const startedAt = Date.now();
+  const exportSource = cleanString_(source) || 'unknown';
 
   try {
     const rows = readAll_({ includeActivityLog: true, includeCommentCounts: false });
@@ -260,10 +281,10 @@ function exportWbs() {
       warning: model.warning || ''
     };
   } catch (error) {
-    console.error('WBS export failed after ' + String(Date.now() - startedAt) + 'ms: ' + cleanString_(error && error.stack || error));
+    console.error('WBS export (' + exportSource + ') failed after ' + String(Date.now() - startedAt) + 'ms: ' + cleanString_(error && error.stack || error));
     throw error;
   } finally {
-    console.info('WBS export finished in ' + String(Date.now() - startedAt) + 'ms');
+    console.info('WBS export (' + exportSource + ') finished in ' + String(Date.now() - startedAt) + 'ms');
     releaseWbsExportGuard_(guardToken);
   }
 }
