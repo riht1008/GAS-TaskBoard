@@ -606,8 +606,15 @@ function fillWbsStaticSections_(values, backgrounds, layout, context) {
 
 function fillWbsTasks_(values, backgrounds, layout, context) {
   const membersById = {};
+  const visibleParentIds = {};
   context.members.forEach(function (member) {
     membersById[wbsClean_(wbsGet_(member, 'MemberId', 'id'))] = member;
+  });
+  context.visibleRows.forEach(function (row) {
+    const parentId = wbsClean_(wbsGet_(row.node, 'ParentId', 'parentId'));
+    if (parentId) {
+      visibleParentIds[parentId] = true;
+    }
   });
   context.visibleRows.forEach(function (row, index) {
     const node = row.node;
@@ -618,7 +625,7 @@ function fillWbsTasks_(values, backgrounds, layout, context) {
     const bgRow = backgrounds[sheetRow - 1];
     const plan = wbsPlanForNode_(node, context.derived[nodeId]);
     const actual = context.actuals[nodeId] || {};
-    const hasChildren = Boolean(context.derived[nodeId] && context.derived[nodeId].hasChildren);
+    const hasVisibleChildren = Boolean(visibleParentIds[nodeId]);
     const assigneeIds = wbsSplitCsv_(wbsGet_(node, 'AssigneeIds', 'assigneeIds'));
     const assigneeNames = [];
     const companies = [];
@@ -651,8 +658,8 @@ function fillWbsTasks_(values, backgrounds, layout, context) {
     backgrounds[sheetRow - 1][layout.doneCol - 1] = WBS_COLORS.header;
     matrixRow[layout.deliverableCol - 1] = wbsClean_(wbsGet_(node, 'Deliverable', 'deliverable'));
     matrixRow[layout.noteCol - 1] = wbsClean_(wbsGet_(node, 'Note', 'note'));
-    matrixRow[layout.companyCol - 1] = hasChildren ? '' : companies.join('・');
-    matrixRow[layout.assigneeCol - 1] = hasChildren ? '' : assigneeNames.join('・');
+    matrixRow[layout.companyCol - 1] = hasVisibleChildren ? '' : companies.join('・');
+    matrixRow[layout.assigneeCol - 1] = hasVisibleChildren ? '' : assigneeNames.join('・');
     matrixRow[layout.planStartCol - 1] = plan.startDate ? wbsDateValue_(plan.startDate) : '';
     matrixRow[layout.planEndCol - 1] = plan.endDate ? wbsDateValue_(plan.endDate) : '';
     matrixRow[layout.planDaysCol - 1] = wbsDaysFormula_(sheetRow, layout.planStartCol, layout.planEndCol);

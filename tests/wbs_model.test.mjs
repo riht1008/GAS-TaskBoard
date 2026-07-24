@@ -147,6 +147,22 @@ test('WBS leaves company and assignee blank for parent tasks but keeps leaf owne
   assert.equal(model.values[leafRow.sheetRow - 1][model.layout.assigneeCol - 1], '田中');
 });
 
+test('WBS keeps the owner when a task has only excluded child tasks', () => {
+  const rows = baseRows();
+  rows.nodes.find(node => node.NodeId === 'c1').AssigneeIds = 'm1';
+  rows.nodes.find(node => node.NodeId === 'c1a').IncludeInWbs = false;
+  const model = buildWbsModel_(rows, {
+    actorName: '佐藤',
+    now: '2026-07-03T00:00:00.000Z',
+    createdAt: '2026-07-03T00:00:00.000Z',
+    version: 1
+  });
+  const outputLeafRow = model.taskRows.find(row => row.node.NodeId === 'c1');
+  assert.equal(model.taskRows.some(row => row.node.NodeId === 'c1a'), false);
+  assert.equal(model.values[outputLeafRow.sheetRow - 1][model.layout.companyCol - 1], 'ACME');
+  assert.equal(model.values[outputLeafRow.sheetRow - 1][model.layout.assigneeCol - 1], '佐藤');
+});
+
 test('template places milestones and dated meetings on gantt rows', () => {
   const rows = baseRows();
   rows.milestones = [
