@@ -69,6 +69,23 @@ test('detail drawer uses one task title and compact property rows', () => {
   assert.doesNotMatch(panels, /detail-status-badge/);
 });
 
+test('detail drawer copies the same node deep link used by Slack notifications', () => {
+  const index = fs.readFileSync(new URL('../src/Index.html', import.meta.url), 'utf8');
+  const code = fs.readFileSync(new URL('../src/Code.js', import.meta.url), 'utf8');
+  const stateSource = fs.readFileSync(new URL('../src/ClientState.html', import.meta.url), 'utf8');
+
+  assert.match(code, /template\.bootstrapWebAppUrl = webAppUrl_\(\)/);
+  assert.match(index, /__TASKBOARD_WEB_APP_URL__/);
+  assert.match(stateSource, /share: '<path/);
+  assert.match(panels, /data-action="copy-task-link"/);
+  assert.match(panels, /aria-label="タスクへのリンクをコピー"/);
+  assert.match(bindings, /copyTaskLink\(event\.currentTarget\.dataset\.nodeId\)/);
+  assert.match(actions, /'node=' \+ encodeURIComponent\(targetNodeId\)/);
+  assert.match(actions, /navigator\.clipboard\.writeText\(url\)/);
+  assert.match(actions, /copyTextFallback\(url\)/);
+  assert.match(actions, /タスクへのリンクをコピーしました/);
+});
+
 test('description has explicit read and edit modes with Escape returning to read mode', () => {
   assert.match(panels, /state\.detailDescriptionEditing/);
   assert.match(panels, /data-action="edit-detail-description"/);

@@ -712,6 +712,7 @@
       if (action === 'confirm-status-delete') return confirmStatusDelete(event.currentTarget.dataset.columnId);
       if (action === 'close-dialog') return closeDialog();
       if (action === 'close-drawer') return closeDrawer();
+      if (action === 'copy-task-link') return copyTaskLink(event.currentTarget.dataset.nodeId);
       if (action === 'edit-detail-description') return startDetailDescriptionEdit();
       if (action === 'finish-detail-description') return finishDetailDescriptionEdit();
       if (action === 'discard-detail-close') return discardDetailChangesAndClose();

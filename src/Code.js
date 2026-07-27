@@ -13,6 +13,7 @@ function doGet(e) {
   template.bootstrapEmail = getCurrentEmail_();
   template.bootstrapNodeId = safeBootstrapId_(parameters.node);
   template.bootstrapCommentId = safeBootstrapId_(parameters.comment);
+  template.bootstrapWebAppUrl = webAppUrl_();
   return template.evaluate().setTitle('タスク管理');
 }
 
