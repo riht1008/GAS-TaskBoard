@@ -61,9 +61,11 @@
           event.stopPropagation();
           const id = button.dataset.dropdownTrigger;
           if (state.openDropdown === id) {
+            discardDeferredDropdownDraft(id);
             state.openDropdown = '';
             state.calendarView = null;
           } else {
+            discardDeferredDropdownDraft(state.openDropdown);
             state.openDropdown = id;
             if (button.closest('.date-picker')) ensureCalendarView(id);
           }
@@ -72,6 +74,7 @@
         bindOnce(button, 'keydown', event => {
           if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
             event.preventDefault();
+            discardDeferredDropdownDraft(state.openDropdown);
             state.openDropdown = button.dataset.dropdownTrigger;
             if (button.closest('.date-picker')) ensureCalendarView(button.dataset.dropdownTrigger);
             render();
@@ -88,7 +91,8 @@
           const scope = dropdown.dataset.scope;
           const field = dropdown.dataset.field;
           const multi = dropdown.dataset.multi === 'true';
-          setDropdownValue(scope, field, value, multi);
+          const deferCommit = dropdown.dataset.deferCommit === 'true';
+          setDropdownValue(scope, field, value, multi, deferCommit);
           if (!multi) state.openDropdown = '';
           render();
         });
@@ -612,7 +616,10 @@
     function handleActionClick(event) {
       const action = event.currentTarget.dataset.action;
       if (action && action.startsWith('calendar-')) event.stopPropagation();
+      if (action && action.endsWith('deferred-dropdown')) event.stopPropagation();
       if (action && action.includes('notification')) event.stopPropagation();
+      if (action === 'cancel-deferred-dropdown') return cancelDeferredDropdown(event.currentTarget.dataset.dropdownId);
+      if (action === 'apply-deferred-dropdown') return applyDeferredDropdown(event.currentTarget.dataset.dropdownId);
       if (action === 'reload' || action === 'force-sync') return syncFromServer({ force: true });
       if (action === 'create-child-shell') {
         removeCreatePreview();
@@ -977,15 +984,20 @@
       saveDetail(event.metaKey || event.ctrlKey ? { createNext: true } : { closeAfter: true });
     }
 
-    function setDropdownValue(scope, field, value, multi) {
+    function setDropdownValue(scope, field, value, multi, deferCommit) {
       const inlineNodeId = inlineNodeIdFromScope(scope);
       if (inlineNodeId) {
         const node = state.nodesById.get(inlineNodeId);
         if (!node) return;
         let nextValue = value;
         if (multi) {
-          const current = Array.isArray(node[field]) ? node[field].slice() : [];
+          const source = deferCommit ? inlineDraftValue(inlineNodeId, field, node[field] || []) : node[field];
+          const current = Array.isArray(source) ? source.slice() : [];
           nextValue = current.includes(value) ? current.filter(item => item !== value) : current.concat(value);
+        }
+        if (deferCommit) {
+          setInlineDraft(inlineNodeId, field, nextValue);
+          return;
         }
         if (!multi) state.openDropdown = '';
         saveInlineNodeField(inlineNodeId, field, nextValue);
@@ -1010,6 +1022,51 @@
         if (value === doneId) target.progress = 100;
         else if (previousProgress === 100) target.progress = 90;
       }
+    }
+
+    function discardDeferredDropdownDraft(id) {
+      const { scope, field } = splitControlId(id);
+      const inlineNodeId = inlineNodeIdFromScope(scope);
+      if (!inlineNodeId || field !== 'assigneeIds') return;
+      clearInlineDraft(inlineNodeId, field);
+    }
+
+    function discardInactiveDeferredDropdownDrafts(activeId) {
+      const { scope, field } = splitControlId(activeId);
+      const inlineNodeId = inlineNodeIdFromScope(scope);
+      const activeKey = inlineNodeId && field === 'assigneeIds' ? inlineDraftKey(inlineNodeId, field) : '';
+      Array.from(state.inlineDrafts.keys()).forEach(key => {
+        if (key.endsWith(':assigneeIds') && key !== activeKey) state.inlineDrafts.delete(key);
+      });
+    }
+
+    function cancelDeferredDropdown(id) {
+      discardDeferredDropdownDraft(id);
+      state.openDropdown = '';
+      state.calendarView = null;
+      render();
+      restoreDropdownTriggerFocus(id);
+    }
+
+    function applyDeferredDropdown(id) {
+      const { scope, field } = splitControlId(id);
+      const inlineNodeId = inlineNodeIdFromScope(scope);
+      const node = inlineNodeId ? state.nodesById.get(inlineNodeId) : null;
+      if (!node || field !== 'assigneeIds') return cancelDeferredDropdown(id);
+      const nextValue = inlineDraftValue(inlineNodeId, field, node[field] || []);
+      state.openDropdown = '';
+      state.calendarView = null;
+      saveInlineNodeField(inlineNodeId, field, Array.isArray(nextValue) ? nextValue.slice() : []);
+      render();
+      restoreDropdownTriggerFocus(id);
+    }
+
+    function restoreDropdownTriggerFocus(id) {
+      requestAnimationFrame(() => {
+        const trigger = Array.from(document.querySelectorAll('[data-dropdown-trigger]'))
+          .find(item => item.dataset.dropdownTrigger === id);
+        if (trigger) trigger.focus();
+      });
     }
 
     function draftForScope(scope) {
@@ -1083,6 +1140,7 @@
 
     function closeOpenDropdownAndRestoreFocus_() {
       const id = state.openDropdown;
+      discardDeferredDropdownDraft(id);
       state.openDropdown = '';
       state.calendarView = null;
       render();

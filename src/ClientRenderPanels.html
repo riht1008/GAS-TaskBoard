@@ -1215,15 +1215,28 @@
         ? renderMultiValue(selectedOptions, config.placeholder)
         : renderSingleValue(selectedOptions[0], config.placeholder);
       const triggerClass = `dropdown-trigger${config.plain ? ' inline-display-trigger' : ''}`;
+      const deferCommit = config.multi && config.deferCommit;
+      const optionsHtml = options.map(option => renderDropdownOption(id, option, config.multi ? selected.includes(option.value) : option.value === selected)).join('');
       return `
-        <div class="dropdown" data-dropdown="${h(id)}" data-scope="${h(scope)}" data-field="${h(field)}" data-multi="${config.multi ? 'true' : 'false'}">
+        <div class="dropdown" data-dropdown="${h(id)}" data-scope="${h(scope)}" data-field="${h(field)}" data-multi="${config.multi ? 'true' : 'false'}" data-defer-commit="${deferCommit ? 'true' : 'false'}">
           <button class="${triggerClass}" type="button" data-dropdown-trigger="${h(id)}" ${config.disabled ? 'disabled' : ''} ${config.ariaLabel ? `aria-label="${h(config.ariaLabel)}"` : ''} aria-haspopup="listbox" aria-expanded="${state.openDropdown === id ? 'true' : 'false'}">
             <span class="dropdown-value">${config.triggerHtml || label}</span>
             ${config.plain ? '' : `<span class="dropdown-chevron">${icon('chevron-down')}</span>`}
           </button>
           ${state.openDropdown === id ? `
-            <div class="dropdown-menu" role="listbox" data-preserve-scroll="dropdown:${h(id)}">
-              ${options.map(option => renderDropdownOption(id, option, config.multi ? selected.includes(option.value) : option.value === selected)).join('')}
+            <div class="dropdown-menu ${deferCommit ? 'deferred-dropdown-menu' : ''}" ${deferCommit ? '' : `role="listbox"${config.multi ? ' aria-multiselectable="true"' : ''} data-preserve-scroll="dropdown:${h(id)}"`}>
+              ${deferCommit ? `
+                <div class="dropdown-option-list" role="listbox" aria-multiselectable="true" data-preserve-scroll="dropdown:${h(id)}">
+                  ${optionsHtml}
+                </div>
+                <div class="dropdown-menu-actions">
+                  <span class="dropdown-selection-count">${selected.length}人選択</span>
+                  <div class="inline-actions">
+                    <button class="button ghost compact" type="button" data-action="cancel-deferred-dropdown" data-dropdown-id="${h(id)}">キャンセル</button>
+                    <button class="button primary compact" type="button" data-action="apply-deferred-dropdown" data-dropdown-id="${h(id)}">適用</button>
+                  </div>
+                </div>
+              ` : optionsHtml}
             </div>
           ` : ''}
         </div>

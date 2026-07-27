@@ -224,6 +224,7 @@
     document.addEventListener('keydown', handleGlobalKeydown);
     document.addEventListener('click', event => {
       if (state.openDropdown && !event.target.closest('.dropdown') && !event.target.closest('[data-dropdown-portal]')) {
+        discardDeferredDropdownDraft(state.openDropdown);
         state.openDropdown = '';
         state.calendarView = null;
         render();

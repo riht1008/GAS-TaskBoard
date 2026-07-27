@@ -4,6 +4,7 @@
         state.renderDeferred = true;
         return;
       }
+      discardInactiveDeferredDropdownDrafts(state.openDropdown);
       // Most state changes rebuild the shell and patch open floating panels. Keep
       // explicitly named scroll regions stable across incidental renders such as
       // sync responses, save start/completion, and notification state updates.
@@ -735,6 +736,7 @@
       const showAdd = canCreateChild(node);
       const inlineScope = `inline:${node.id}`;
       const inlineName = inlineDraftValue(node.id, 'name', node.name || '');
+      const inlineAssigneeIds = inlineDraftValue(node.id, 'assigneeIds', node.assigneeIds || []);
       const progressValue = inlineProgressValue(node);
       const progressTone = progressColor(progressValue) || 'var(--color-border)';
       return `
@@ -752,7 +754,7 @@
             </div>
           </td>
           <td>${renderDropdown({ scope: inlineScope, field: 'statusColumnId', selected: node.statusColumnId, disabled: !state.currentMember, plain: true, triggerHtml: renderStatusChip(node.statusColumnId), options: state.statusColumns.map(column => ({ value: column.id, label: column.name, color: column.color || defaultStatusColor(column) })) })}</td>
-          <td>${renderDropdown({ scope: inlineScope, field: 'assigneeIds', selected: node.assigneeIds, disabled: !state.currentMember, multi: true, plain: true, triggerHtml: renderAvatars(node.assigneeIds), placeholder: '未割当', options: state.members.map(member => ({ value: member.id, label: member.name, avatar: member })) })}</td>
+          <td>${renderDropdown({ scope: inlineScope, field: 'assigneeIds', selected: inlineAssigneeIds, disabled: !state.currentMember, multi: true, deferCommit: true, plain: true, triggerHtml: renderAvatars(inlineAssigneeIds), placeholder: '未割当', options: state.members.map(member => ({ value: member.id, label: member.name, avatar: member })) })}</td>
           <td>${renderDropdown({ scope: inlineScope, field: 'priority', selected: node.priority, disabled: !state.currentMember, plain: true, triggerHtml: `<span class="chip">${h(priorityLabel(node.priority))}</span>`, options: priorityOptions() })}</td>
           <td>
             <div class="inline-date-range">
@@ -913,7 +915,6 @@
             ${node.hasChildren ? `<button class="button ghost icon compact" data-toggle-node="${h(node.id)}">${icon(state.collapsed.has(node.id) ? 'chevron-right' : 'chevron-down')}</button>` : '<span class="button icon compact" aria-hidden="true"></span>'}
             <span class="tree-name ${node.name ? '' : 'placeholder'}" data-open-node="${h(node.id)}">${h(node.name || '新しいタスク')}</span>
             ${renderWbsExcludedChip(node)}
-            <button class="button ghost icon compact" data-open-node="${h(node.id)}" title="編集">${icon('edit')}</button>
             ${showAdd ? `<button class="button ghost icon compact row-add-child" data-action="create-child-shell" data-parent-id="${h(node.id)}" title="子タスクを追加">${icon('plus')}</button>` : ''}
             ${state.savingNodeIds.has(node.id) ? '<span class="saving-dot inline"></span>' : ''}
           </div>
