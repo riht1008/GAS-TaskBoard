@@ -35,10 +35,16 @@ test('detail drawer exposes editable actual dates and keeps them in the save sna
   assert.match(actions, /a\.actualEndDate === b\.actualEndDate/);
 });
 
-test('parent schedules expose descendant-expanded ranges consistently in details and gantt labels', () => {
+test('parent schedules expose an automatic effective range consistently in details and gantt labels', () => {
   assert.match(panels, /collectDescendants\(node\.id\)\.forEach/);
-  assert.match(panels, /renderDetailPropertyRow\('表示範囲'/);
-  assert.match(panels, /子タスクを含む・ガント／WBS/);
+  assert.match(panels, /node\.hasChildren \? '自身の開始日' : '開始日'/);
+  assert.match(panels, /node\.hasChildren \? '自身の終了日' : '終了日'/);
+  assert.match(panels, /renderDetailPropertyRow\('有効期間'/);
+  assert.match(panels, /親自身と子タスクから自動算出・ガント／WBS/);
+  assert.doesNotMatch(panels, /子の予定に合わせる|fit-children/);
+  assert.doesNotMatch(actions, /function fitChildren|fitNodeToChildren/);
+  assert.doesNotMatch(bindings, /fit-children/);
+  assert.doesNotMatch(nodeApi, /function fitNodeToChildren/);
   assert.match(views, /formatShortRange\(node\.displayStartDate, node\.displayEndDate\)/);
   assert.match(views, /durationLabel\(node\.displayStartDate, node\.displayEndDate\)/);
   assert.doesNotMatch(views, /node\.startDate \|\| node\.displayStartDate/);

@@ -1566,31 +1566,6 @@
       render();
     }
 
-    function fitChildren(nodeId) {
-      const node = state.nodesById.get(nodeId);
-      const scheduled = collectDescendants(nodeId)
-        .map(id => state.nodesById.get(id))
-        .filter(item => item && item.startDate && item.endDate);
-      if (!node || !scheduled.length) {
-        showToast('子孫に日付が設定されたタスクがありません', 'warning');
-        return;
-      }
-      const startDate = scheduled.map(item => item.startDate).sort()[0];
-      const ends = scheduled.map(item => item.endDate).sort();
-      const endDate = ends[ends.length - 1];
-      queueNodeMutation(nodeId, 'fitNodeToChildren', () => ({
-        nodeId,
-        baseUpdatedAt: currentUpdatedAt(nodeId)
-      }), () => {
-        const target = state.nodesById.get(nodeId);
-        if (!target) return;
-        target.startDate = startDate;
-        target.endDate = endDate;
-        target.displayStartDate = startDate;
-        target.displayEndDate = endDate;
-      });
-    }
-
     function confirmNodeDelete(nodeId) {
       const node = state.nodesById.get(nodeId);
       if (!node) return;

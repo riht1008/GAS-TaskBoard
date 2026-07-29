@@ -338,19 +338,6 @@ function computeDerived_(activeNodes, statusColumns) {
   return derived;
 }
 
-function descendantOwnScheduleBounds_(nodeId, activeNodes) {
-  const descendants = collectDescendantIds_(nodeId, childrenMap_(activeNodes));
-  const scheduled = descendants.map(function (id) {
-    return activeNodes.find(function (n) { return n.NodeId === id; });
-  }).filter(hasSchedule_);
-  if (!scheduled.length) {
-    return { startDate: '', endDate: '' };
-  }
-  const starts = scheduled.map(function (n) { return n.StartDate; }).sort();
-  const ends = scheduled.map(function (n) { return n.EndDate; }).sort();
-  return { startDate: starts[0], endDate: ends[ends.length - 1] };
-}
-
 function commentCounts_(rows) {
   const activeMap = byId_(payloadVisibleNodes_(rows), 'NodeId');
   const counts = {};

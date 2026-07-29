@@ -110,6 +110,37 @@ test('server and client derived progress and rollup bounds stay equivalent', () 
   });
 });
 
+test('parent effective range automatically follows child expansion and contraction', () => {
+  const statuses = [
+    { ColumnId: 'todo', IsDoneColumn: false },
+    { ColumnId: 'done', IsDoneColumn: true }
+  ];
+  const nodes = [
+    { NodeId: 'parent', ParentId: '', StatusColumnId: 'todo', StartDate: '2026-08-01', EndDate: '2026-08-03' },
+    { NodeId: 'child', ParentId: 'parent', StatusColumnId: 'todo', StartDate: '2026-08-02', EndDate: '2026-08-05' }
+  ];
+
+  let derived = computeDerived_(nodes, statuses);
+  assert.deepEqual(derived.parent, {
+    hasChildren: true,
+    progress: 0,
+    displayStartDate: '2026-08-01',
+    displayEndDate: '2026-08-05'
+  });
+
+  nodes[1].StartDate = '2026-08-02';
+  nodes[1].EndDate = '2026-08-02';
+  derived = computeDerived_(nodes, statuses);
+  assert.equal(derived.parent.displayStartDate, '2026-08-01');
+  assert.equal(derived.parent.displayEndDate, '2026-08-03');
+
+  nodes[1].StartDate = '2026-07-30';
+  nodes[1].EndDate = '2026-08-02';
+  derived = computeDerived_(nodes, statuses);
+  assert.equal(derived.parent.displayStartDate, '2026-07-30');
+  assert.equal(derived.parent.displayEndDate, '2026-08-03');
+});
+
 test('client parent status rollup ignores unfinished draft children', () => {
   const state = {
     nodes: [

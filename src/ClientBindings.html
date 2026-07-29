@@ -726,7 +726,6 @@
       if (action === 'save-detail-close') return saveDetailChangesAndClose();
       if (action === 'save-detail') return saveDetail({ closeAfter: true });
       if (action === 'save-detail-next') return saveDetail({ createNext: true });
-      if (action === 'fit-children') return fitChildren(event.currentTarget.dataset.nodeId);
       if (action === 'confirm-node-delete') return confirmNodeDelete(event.currentTarget.dataset.nodeId);
       if (action === 'delete-node') return deleteNodeConfirmed();
       if (action === 'delete-status') return deleteStatusConfirmed();

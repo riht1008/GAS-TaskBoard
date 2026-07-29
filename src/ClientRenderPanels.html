@@ -34,8 +34,7 @@
       });
       const detailDisplayStartDate = detailScheduleStarts.length ? detailScheduleStarts.sort()[0] : '';
       const detailDisplayEndDate = detailScheduleEnds.length ? detailScheduleEnds.sort()[detailScheduleEnds.length - 1] : '';
-      const showExpandedSchedule = node.hasChildren && detailDisplayStartDate && detailDisplayEndDate &&
-        (detailDisplayStartDate !== draft.startDate || detailDisplayEndDate !== draft.endDate);
+      const hasDetailDisplaySchedule = Boolean(detailDisplayStartDate && detailDisplayEndDate);
       const descriptionPreview = draft.description
         ? `<div class="markdown-body">${renderMarkdown(draft.description, [])}</div>`
         : state.currentMember
@@ -111,10 +110,9 @@
                 </section>
                 <section class="drawer-section detail-property-section">
                   <div class="section-title">予定</div>
-                  ${renderDetailPropertyRow('開始日', renderDatePicker({ scope: 'detail', field: 'startDate', selected: draft.startDate, disabled: !state.currentMember, endDate: draft.endDate, plain: true, ariaLabel: '予定開始日', placeholder: '未設定' }))}
-                  ${renderDetailPropertyRow('終了日', renderDatePicker({ scope: 'detail', field: 'endDate', selected: draft.endDate, disabled: !state.currentMember, startDate: draft.startDate, minDate: draft.startDate, plain: true, ariaLabel: '予定終了日', placeholder: '未設定' }))}
-                  ${showExpandedSchedule ? renderDetailPropertyRow('表示範囲', `<div class="detail-property-value">${h(formatShortRange(detailDisplayStartDate, detailDisplayEndDate))}<span class="field-hint">子タスクを含む・ガント／WBS</span></div>`) : ''}
-                  ${node.hasChildren ? `<button class="button secondary compact" data-action="fit-children" data-node-id="${h(node.id)}" ${state.currentMember ? '' : 'disabled'}>子の予定に合わせる</button>` : ''}
+                  ${renderDetailPropertyRow(node.hasChildren ? '自身の開始日' : '開始日', renderDatePicker({ scope: 'detail', field: 'startDate', selected: draft.startDate, disabled: !state.currentMember, endDate: draft.endDate, plain: true, ariaLabel: '予定開始日', placeholder: '未設定' }))}
+                  ${renderDetailPropertyRow(node.hasChildren ? '自身の終了日' : '終了日', renderDatePicker({ scope: 'detail', field: 'endDate', selected: draft.endDate, disabled: !state.currentMember, startDate: draft.startDate, minDate: draft.startDate, plain: true, ariaLabel: '予定終了日', placeholder: '未設定' }))}
+                  ${node.hasChildren ? renderDetailPropertyRow('有効期間', `<div class="detail-property-value">${h(hasDetailDisplaySchedule ? formatShortRange(detailDisplayStartDate, detailDisplayEndDate) : '未設定')}<span class="field-hint">親自身と子タスクから自動算出・ガント／WBS</span></div>`) : ''}
                 </section>
                 <section class="drawer-section detail-property-section">
                   <div class="section-title">実績</div>

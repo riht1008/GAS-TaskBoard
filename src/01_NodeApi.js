@@ -595,41 +595,6 @@ function restoreNode(payload) {
   });
 }
 
-function fitNodeToChildren(payload) {
-  payload = payload || {};
-  return withLock_(function () {
-    requireSchemaExists_();
-    const requestId = cleanString_(payload.requestId);
-    let rows = readNodeSnapshot_();
-    const actor = requireCurrentMember_(rows.members);
-    const active = activeNodes_(rows.nodes);
-    validateNodeTree_(active);
-    const nodesById = byId_(active, 'NodeId');
-    const nodeId = cleanString_(payload.nodeId);
-    const node = nodesById[nodeId];
-    if (!node) {
-      throw new Error('ノードが見つかりません。');
-    }
-    if (!nodeBaseVersionMatches_(payload, node, actor, false)) {
-      return makeConflictPayload_(rows, nodeId, requestId);
-    }
-
-    const childBounds = descendantOwnScheduleBounds_(nodeId, active);
-    if (!childBounds.startDate || !childBounds.endDate) {
-      throw new Error('子孫に日付が設定されたノードがありません。');
-    }
-    node.StartDate = childBounds.startDate;
-    node.EndDate = childBounds.endDate;
-    node.UpdatedAt = nowIso_();
-    node.UpdatedBy = actor.MemberId;
-    writeObject_(SHEET.NODES, node);
-
-    rows = readNodeSnapshot_();
-    const affectedIds = unique_([nodeId].concat(ancestorIds_(nodeId, activeNodes_(rows.nodes))));
-    return makeMutationPayload_(rows, affectedIds, requestId, {});
-  });
-}
-
 function applyNodePatch_(node, patch, rows) {
   const hasStatusPatch = Object.prototype.hasOwnProperty.call(patch, 'statusColumnId');
   const hasProgressPatch = Object.prototype.hasOwnProperty.call(patch, 'progress');
