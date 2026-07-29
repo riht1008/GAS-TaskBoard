@@ -129,6 +129,12 @@ test('company and assignee columns expand within caps and wrap long task-owner t
   assert.match(wbsSource, /getRange\(block\.start, layout\.companyCol, block\.count, 2\)\.setWrap\(true\)/);
 });
 
+test('WBS date columns include enough width for Excel date rendering', () => {
+  assert.match(wbsSource, /var WBS_DATE_COLUMN_WIDTH = 82;/);
+  assert.match(wbsSource, /setColumnWidths\(layout\.planStartCol, 2, WBS_DATE_COLUMN_WIDTH\)/);
+  assert.match(wbsSource, /setColumnWidths\(layout\.actualStartCol, 2, WBS_DATE_COLUMN_WIDTH\)/);
+});
+
 test('WBS leaves company and assignee blank for parent tasks but keeps leaf owners', () => {
   const rows = baseRows();
   rows.nodes.find(node => node.NodeId === 'c1').AssigneeIds = 'm1';

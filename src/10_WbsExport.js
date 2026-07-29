@@ -408,6 +408,7 @@ var WBS_PROGRESS_COLORS = [
 ];
 var WBS_COMPANY_COLUMN_WIDTH = { min: 96, max: 180 };
 var WBS_ASSIGNEE_COLUMN_WIDTH = { min: 108, max: 200 };
+var WBS_DATE_COLUMN_WIDTH = 82;
 
 function buildWbsLayout_(maxDepth, meetingCount, taskCount) {
   const noCol = 1;
@@ -845,9 +846,9 @@ function applyWbsTemplateFormats_(sheet, model, rowCount, colCount) {
     WBS_ASSIGNEE_COLUMN_WIDTH.min,
     WBS_ASSIGNEE_COLUMN_WIDTH.max
   ));
-  sheet.setColumnWidths(layout.planStartCol, 2, 75);
+  sheet.setColumnWidths(layout.planStartCol, 2, WBS_DATE_COLUMN_WIDTH);
   sheet.setColumnWidth(layout.planDaysCol, 31);
-  sheet.setColumnWidths(layout.actualStartCol, 2, 75);
+  sheet.setColumnWidths(layout.actualStartCol, 2, WBS_DATE_COLUMN_WIDTH);
   sheet.setColumnWidth(layout.actualDaysCol, 31);
   sheet.setColumnWidth(layout.progressCol, 75);
   sheet.setColumnWidth(layout.doneCol, 70);
