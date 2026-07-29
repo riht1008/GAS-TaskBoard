@@ -318,7 +318,7 @@ test('manual actual range overrides activity history and expands the WBS date ra
   assert.ok(model.dateColumns.some(column => column.date === '2026-05-01'));
 });
 
-test('incomplete manual actual range falls back to activity history', () => {
+test('manual actual start keeps the activity-derived end date', () => {
   const logs = [
     { NodeId: 'a', Field: 'status', ChangedAt: '2026-07-02T00:00:00.000Z', NewValueIsDone: false },
     { NodeId: 'a', Field: 'status', ChangedAt: '2026-07-03T00:00:00.000Z', NewValueIsDone: true }
@@ -328,7 +328,38 @@ test('incomplete manual actual range falls back to activity history', () => {
     nodesById: { a: { NodeId: 'a', ActualStartDate: '2026-05-01', ActualEndDate: '' } }
   });
 
-  assert.deepEqual(actual.a, { startDate: '2026-07-02', endDate: '2026-07-03' });
+  assert.deepEqual(actual.a, { startDate: '2026-05-01', endDate: '2026-07-03' });
+});
+
+test('manual actual end keeps the activity-derived start date', () => {
+  const logs = [
+    { NodeId: 'a', Field: 'status', ChangedAt: '2026-07-02T00:00:00.000Z', NewValueIsDone: false },
+    { NodeId: 'a', Field: 'status', ChangedAt: '2026-07-03T00:00:00.000Z', NewValueIsDone: true }
+  ];
+  const actual = deriveActuals_(logs, {
+    progressByNodeId: { a: 100 },
+    nodesById: { a: { NodeId: 'a', ActualStartDate: '', ActualEndDate: '2026-08-01' } }
+  });
+
+  assert.deepEqual(actual.a, { startDate: '2026-07-02', endDate: '2026-08-01' });
+});
+
+test('mixed actual dates omit an inferred value that would reverse the range', () => {
+  const logs = [
+    { NodeId: 'a', Field: 'status', ChangedAt: '2026-07-02T00:00:00.000Z', NewValueIsDone: false },
+    { NodeId: 'a', Field: 'status', ChangedAt: '2026-07-03T00:00:00.000Z', NewValueIsDone: true }
+  ];
+  const manualStart = deriveActuals_(logs, {
+    progressByNodeId: { a: 100 },
+    nodesById: { a: { NodeId: 'a', ActualStartDate: '2026-08-01', ActualEndDate: '' } }
+  });
+  const manualEnd = deriveActuals_(logs, {
+    progressByNodeId: { a: 100 },
+    nodesById: { a: { NodeId: 'a', ActualStartDate: '', ActualEndDate: '2026-06-01' } }
+  });
+
+  assert.deepEqual(manualStart.a, { startDate: '2026-08-01', endDate: '' });
+  assert.deepEqual(manualEnd.a, { startDate: '', endDate: '2026-06-01' });
 });
 
 test('WBS progress output floors derived parent progress to valid options', () => {

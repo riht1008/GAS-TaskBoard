@@ -100,9 +100,9 @@
                 </section>
                 <section class="drawer-section detail-property-section">
                   <div class="section-title">実績</div>
-                  ${renderDetailPropertyRow('着手日', renderDatePicker({ scope: 'detail', field: 'actualStartDate', selected: draft.actualStartDate, disabled: !state.currentMember, endDate: draft.actualEndDate, plain: true, ariaLabel: '実績着手日', placeholder: '自動' }))}
+                  ${renderDetailPropertyRow('着手日', renderDatePicker({ scope: 'detail', field: 'actualStartDate', selected: draft.actualStartDate, disabled: !state.currentMember, endDate: draft.actualEndDate, maxDate: draft.actualEndDate, plain: true, ariaLabel: '実績着手日', placeholder: '自動' }))}
                   ${renderDetailPropertyRow('終了日', renderDatePicker({ scope: 'detail', field: 'actualEndDate', selected: draft.actualEndDate, disabled: !state.currentMember, startDate: draft.actualStartDate, minDate: draft.actualStartDate, plain: true, ariaLabel: '実績終了日', placeholder: '自動' }))}
-                  <div class="field-hint">空欄は変更履歴から自動算出し、WBSへ反映します</div>
+                  <div class="field-hint">各日付の空欄は変更履歴から自動算出し、WBSへ反映します</div>
                 </section>
                 <section class="drawer-section detail-property-section">
                   <div class="section-title">WBS</div>
@@ -1276,7 +1276,7 @@
       const endDate = normalizeClientDateText(config.endDate);
       const selectedForMonth = config.scope === 'filters'
         ? (normalizeClientDateText(state.filters.dateStart) || dayToDate(localTodayDay()))
-        : (selected || (config.field === 'endDate' ? startDate : endDate) || dayToDate(localTodayDay()));
+        : (selected || (config.field === 'endDate' || config.field === 'actualEndDate' ? startDate : endDate) || dayToDate(localTodayDay()));
       const monthDay = calendarState && calendarState.monthDay
         ? calendarState.monthDay
         : monthStartDay(dateToDay(selectedForMonth));
@@ -1333,7 +1333,8 @@
       const accessibleLabel = `${date.getUTCFullYear()}年${date.getUTCMonth() + 1}月${date.getUTCDate()}日`;
       const selected = calendarSelectedRange(config, mode, anchorDay, hoverDay);
       const minDate = normalizeClientDateText(config.minDate);
-      const disabled = minDate && dateText < minDate;
+      const maxDate = normalizeClientDateText(config.maxDate);
+      const disabled = (minDate && dateText < minDate) || (maxDate && dateText > maxDate);
       const isStart = selected && selected.start === day;
       const isEnd = selected && selected.end === day;
       const isRange = selected && day > selected.start && day < selected.end;

@@ -894,8 +894,7 @@
             target.startDate = '';
             target.endDate = '';
           } else if (field === 'actualStartDate' || field === 'actualEndDate') {
-            target.actualStartDate = '';
-            target.actualEndDate = '';
+            target[field] = '';
           } else {
             target[field] = '';
           }
@@ -926,13 +925,12 @@
         }
       }
       if (field === 'actualStartDate') {
+        if (target.actualEndDate && dateText > target.actualEndDate) return;
         target.actualStartDate = dateText;
-        if (!target.actualEndDate || target.actualEndDate < dateText) target.actualEndDate = dateText;
         return;
       }
       if (field === 'actualEndDate') {
         if (target.actualStartDate && dateText < target.actualStartDate) return;
-        if (!target.actualStartDate) target.actualStartDate = dateText;
         target.actualEndDate = dateText;
         return;
       }

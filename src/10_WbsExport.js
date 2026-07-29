@@ -1142,11 +1142,24 @@ function deriveActuals_(logs, options) {
     const node = nodesById[nodeId] || {};
     const explicitStart = wbsClean_(wbsGet_(node, 'ActualStartDate', 'actualStartDate'));
     const explicitEnd = wbsClean_(wbsGet_(node, 'ActualEndDate', 'actualEndDate'));
-    const hasExplicitRange = wbsIsValidDate_(explicitStart) && wbsIsValidDate_(explicitEnd) &&
-      wbsDateToDay_(explicitStart) <= wbsDateToDay_(explicitEnd);
+    const hasExplicitStart = wbsIsValidDate_(explicitStart);
+    const hasExplicitEnd = wbsIsValidDate_(explicitEnd);
+    const inferredStart = startCandidates.length ? startCandidates.sort()[0] : '';
+    let actualStart = hasExplicitStart ? explicitStart : inferredStart;
+    let actualEnd = hasExplicitEnd ? explicitEnd : endDate;
+    if (actualStart && actualEnd && wbsDateToDay_(actualStart) > wbsDateToDay_(actualEnd)) {
+      if (hasExplicitStart && !hasExplicitEnd) {
+        actualEnd = '';
+      } else if (!hasExplicitStart && hasExplicitEnd) {
+        actualStart = '';
+      } else {
+        actualStart = inferredStart;
+        actualEnd = endDate;
+      }
+    }
     actuals[nodeId] = {
-      startDate: hasExplicitRange ? explicitStart : (startCandidates.length ? startCandidates.sort()[0] : ''),
-      endDate: hasExplicitRange ? explicitEnd : endDate
+      startDate: actualStart,
+      endDate: actualEnd
     };
   });
   return actuals;

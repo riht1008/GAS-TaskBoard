@@ -21,7 +21,12 @@ test('detail drawer uses a wide content and property split with responsive fallb
 test('detail drawer exposes editable actual dates and keeps them in the save snapshot', () => {
   assert.match(panels, /field: 'actualStartDate'/);
   assert.match(panels, /field: 'actualEndDate'/);
-  assert.match(panels, /空欄は変更履歴から自動算出し、WBSへ反映します/);
+  assert.match(panels, /各日付の空欄は変更履歴から自動算出し、WBSへ反映します/);
+  assert.match(panels, /field: 'actualStartDate'[\s\S]{0,180}maxDate: draft\.actualEndDate/);
+  assert.match(bindings, /field === 'actualStartDate' \|\| field === 'actualEndDate'\) \{\s*target\[field\] = '';/);
+  assert.match(bindings, /if \(target\.actualEndDate && dateText > target\.actualEndDate\) return;\s*target\.actualStartDate = dateText;/);
+  assert.match(bindings, /if \(target\.actualStartDate && dateText < target\.actualStartDate\) return;\s*target\.actualEndDate = dateText;/);
+  assert.doesNotMatch(bindings, /target\.actualStartDate = '';\s*target\.actualEndDate = '';/);
   assert.doesNotMatch(panels, /自動算出:/);
   assert.doesNotMatch(panels, /hasActualOverride/);
   assert.match(actions, /actualStartDate: draft\.actualStartDate/);

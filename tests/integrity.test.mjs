@@ -22,13 +22,22 @@ test('Slack member IDs are optional, normalized, and validated', () => {
   assert.throws(() => normalizeSlackUserId_('@suzuki'), /U または W/);
 });
 
-test('actual dates accept a complete range or automatic blank state', () => {
+test('actual dates independently accept manual or automatic values', () => {
   assert.deepEqual(normalizeActualDates_('', ''), { startDate: '', endDate: '' });
+  assert.deepEqual(normalizeActualDates_('2026-07-10', ''), {
+    startDate: '2026-07-10',
+    endDate: ''
+  });
+  assert.deepEqual(normalizeActualDates_('', '2026-07-12'), {
+    startDate: '',
+    endDate: '2026-07-12'
+  });
   assert.deepEqual(normalizeActualDates_('2026-07-10', '2026-07-12'), {
     startDate: '2026-07-10',
     endDate: '2026-07-12'
   });
-  assert.throws(() => normalizeActualDates_('2026-07-10', ''), /両方を入力/);
+  assert.throws(() => normalizeActualDates_('invalid', ''), /YYYY-MM-DD/);
+  assert.throws(() => normalizeActualDates_('', 'invalid'), /YYYY-MM-DD/);
   assert.throws(() => normalizeActualDates_('2026-07-12', '2026-07-10'), /実績着手日以降/);
 });
 

@@ -141,12 +141,6 @@ function normalizeSchedule_(startDate, endDate) {
 function normalizeActualDates_(startDate, endDate) {
   const start = cleanString_(startDate);
   const end = cleanString_(endDate);
-  if (!start && !end) {
-    return { startDate: '', endDate: '' };
-  }
-  if (!start || !end) {
-    throw new Error('実績着手日と実績終了日は両方を入力するか、両方を未設定にしてください。');
-  }
   if (start && !isValidDate_(start)) {
     throw new Error('実績着手日は YYYY-MM-DD 形式で入力してください。');
   }
@@ -156,7 +150,9 @@ function normalizeActualDates_(startDate, endDate) {
   if (start && end && dateToDay_(start) > dateToDay_(end)) {
     throw new Error('実績終了日は実績着手日以降にしてください。');
   }
-  assertProjectDateRange_(start, end, '実績日');
+  if (start || end) {
+    assertProjectDateRange_(start || end, end || start, '実績日');
+  }
   return { startDate: start, endDate: end };
 }
 
