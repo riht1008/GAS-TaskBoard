@@ -1166,14 +1166,16 @@ function deriveActuals_(logs, options) {
 }
 
 function wbsPlanForNode_(node, derived) {
+  const displayStart = wbsClean_(derived && derived.displayStartDate);
+  const displayEnd = wbsClean_(derived && derived.displayEndDate);
+  if (wbsIsValidDate_(displayStart) && wbsIsValidDate_(displayEnd)) {
+    return { startDate: displayStart, endDate: displayEnd };
+  }
   const ownStart = wbsClean_(wbsGet_(node, 'StartDate', 'startDate'));
   const ownEnd = wbsClean_(wbsGet_(node, 'EndDate', 'endDate'));
-  if (wbsIsValidDate_(ownStart) && wbsIsValidDate_(ownEnd)) {
-    return { startDate: ownStart, endDate: ownEnd };
-  }
   return {
-    startDate: derived && derived.displayStartDate ? derived.displayStartDate : '',
-    endDate: derived && derived.displayEndDate ? derived.displayEndDate : ''
+    startDate: wbsIsValidDate_(ownStart) ? ownStart : '',
+    endDate: wbsIsValidDate_(ownEnd) ? ownEnd : ''
   };
 }
 

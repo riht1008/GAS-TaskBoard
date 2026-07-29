@@ -35,6 +35,15 @@ test('detail drawer exposes editable actual dates and keeps them in the save sna
   assert.match(actions, /a\.actualEndDate === b\.actualEndDate/);
 });
 
+test('parent schedules expose descendant-expanded ranges consistently in details and gantt labels', () => {
+  assert.match(panels, /collectDescendants\(node\.id\)\.forEach/);
+  assert.match(panels, /renderDetailPropertyRow\('表示範囲'/);
+  assert.match(panels, /子タスクを含む・ガント／WBS/);
+  assert.match(views, /formatShortRange\(node\.displayStartDate, node\.displayEndDate\)/);
+  assert.match(views, /durationLabel\(node\.displayStartDate, node\.displayEndDate\)/);
+  assert.doesNotMatch(views, /node\.startDate \|\| node\.displayStartDate/);
+});
+
 test('description and comment composer receive the primary editing space', () => {
   assert.match(panels, /detail-description-textarea/);
   assert.match(panels, /detail-comments-section/);

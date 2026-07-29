@@ -19,6 +19,23 @@
       const progressValue = draft.statusColumnId === doneColumnId ? 100 : normalizeProgressValue(draft.progress) === null ? 0 : normalizeProgressValue(draft.progress);
       const ancestorExcluded = hasWbsExcludedAncestor(node.id);
       const showSaveFooter = Boolean(state.shellNodeId && state.shellNodeId === node.id) || hasUnsavedDetailDraft();
+      const detailScheduleStarts = [];
+      const detailScheduleEnds = [];
+      if (draft.startDate && draft.endDate) {
+        detailScheduleStarts.push(draft.startDate);
+        detailScheduleEnds.push(draft.endDate);
+      }
+      collectDescendants(node.id).forEach(descendantId => {
+        const descendant = state.nodesById.get(descendantId);
+        if (descendant && descendant.startDate && descendant.endDate) {
+          detailScheduleStarts.push(descendant.startDate);
+          detailScheduleEnds.push(descendant.endDate);
+        }
+      });
+      const detailDisplayStartDate = detailScheduleStarts.length ? detailScheduleStarts.sort()[0] : '';
+      const detailDisplayEndDate = detailScheduleEnds.length ? detailScheduleEnds.sort()[detailScheduleEnds.length - 1] : '';
+      const showExpandedSchedule = node.hasChildren && detailDisplayStartDate && detailDisplayEndDate &&
+        (detailDisplayStartDate !== draft.startDate || detailDisplayEndDate !== draft.endDate);
       const descriptionPreview = draft.description
         ? `<div class="markdown-body">${renderMarkdown(draft.description, [])}</div>`
         : state.currentMember
@@ -96,6 +113,7 @@
                   <div class="section-title">予定</div>
                   ${renderDetailPropertyRow('開始日', renderDatePicker({ scope: 'detail', field: 'startDate', selected: draft.startDate, disabled: !state.currentMember, endDate: draft.endDate, plain: true, ariaLabel: '予定開始日', placeholder: '未設定' }))}
                   ${renderDetailPropertyRow('終了日', renderDatePicker({ scope: 'detail', field: 'endDate', selected: draft.endDate, disabled: !state.currentMember, startDate: draft.startDate, minDate: draft.startDate, plain: true, ariaLabel: '予定終了日', placeholder: '未設定' }))}
+                  ${showExpandedSchedule ? renderDetailPropertyRow('表示範囲', `<div class="detail-property-value">${h(formatShortRange(detailDisplayStartDate, detailDisplayEndDate))}<span class="field-hint">子タスクを含む・ガント／WBS</span></div>`) : ''}
                   ${node.hasChildren ? `<button class="button secondary compact" data-action="fit-children" data-node-id="${h(node.id)}" ${state.currentMember ? '' : 'disabled'}>子の予定に合わせる</button>` : ''}
                 </section>
                 <section class="drawer-section detail-property-section">

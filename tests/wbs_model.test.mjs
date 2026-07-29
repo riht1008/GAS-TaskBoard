@@ -113,6 +113,38 @@ test('template layout keeps management columns fixed and places deep task names'
   assert.equal(model.values[model.layout.headerRow2 - 1][17], '完了フラグ');
 });
 
+test('WBS parent plan dates use descendant-expanded ranges with or without manual parent dates', () => {
+  const rows = baseRows();
+  rows.nodes = [
+    { NodeId: 'root', ParentId: '', Name: '案件', StatusColumnId: 'todo', SortOrder: 1000 },
+    { NodeId: 'phase', ParentId: 'root', Name: 'Phase', StatusColumnId: 'todo', SortOrder: 1000 },
+    { NodeId: 'auto-parent', ParentId: 'phase', Name: 'Auto Parent', StatusColumnId: 'todo', SortOrder: 1000 },
+    { NodeId: 'auto-child', ParentId: 'auto-parent', Name: 'Auto Child', StatusColumnId: 'todo', SortOrder: 1000, StartDate: '2026-08-01', EndDate: '2026-08-03' },
+    { NodeId: 'manual-parent', ParentId: 'phase', Name: 'Manual Parent', StatusColumnId: 'todo', SortOrder: 2000, StartDate: '2026-08-01', EndDate: '2026-08-03' },
+    { NodeId: 'overflow-child', ParentId: 'manual-parent', Name: 'Overflow Child', StatusColumnId: 'todo', SortOrder: 1000, StartDate: '2026-08-02', EndDate: '2026-08-05' }
+  ];
+  const model = buildWbsModel_(rows, {
+    actorName: '佐藤',
+    now: '2026-08-01T00:00:00.000Z',
+    createdAt: '2026-08-01T00:00:00.000Z',
+    version: 1
+  });
+
+  function planDates(nodeId) {
+    const taskRow = model.taskRows.find(row => row.node.NodeId === nodeId);
+    const matrixRow = model.values[taskRow.sheetRow - 1];
+    const start = matrixRow[model.layout.planStartCol - 1];
+    const end = matrixRow[model.layout.planEndCol - 1];
+    return [
+      start ? [start.getFullYear(), start.getMonth() + 1, start.getDate()] : [],
+      end ? [end.getFullYear(), end.getMonth() + 1, end.getDate()] : []
+    ];
+  }
+
+  assert.deepEqual(planDates('auto-parent'), [[2026, 8, 1], [2026, 8, 3]]);
+  assert.deepEqual(planDates('manual-parent'), [[2026, 8, 1], [2026, 8, 5]]);
+});
+
 test('company and assignee columns expand within caps and wrap long task-owner text', () => {
   const model = {
     taskRows: [{ sheetRow: 2 }, { sheetRow: 3 }],

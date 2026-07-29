@@ -918,8 +918,8 @@
             ${showAdd ? `<button class="button ghost icon compact row-add-child" data-action="create-child-shell" data-parent-id="${h(node.id)}" title="子タスクを追加">${icon('plus')}</button>` : ''}
             ${state.savingNodeIds.has(node.id) ? '<span class="saving-dot inline"></span>' : ''}
           </div>
-          <div class="gantt-tree-meta">${h(formatShortRange(node.startDate || node.displayStartDate, node.endDate || node.displayEndDate))}</div>
-          <div class="gantt-tree-meta">${h(durationLabel(node.startDate || node.displayStartDate, node.endDate || node.displayEndDate))}</div>
+          <div class="gantt-tree-meta">${h(formatShortRange(node.displayStartDate, node.displayEndDate))}</div>
+          <div class="gantt-tree-meta">${h(durationLabel(node.displayStartDate, node.displayEndDate))}</div>
         </div>
       `;
     }
