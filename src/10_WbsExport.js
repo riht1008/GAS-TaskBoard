@@ -349,6 +349,7 @@ function buildWbsModel_(rows, options) {
   const maxDepth = Math.max(3, visibleRows.reduce(function (max, row) { return Math.max(max, row.depth); }, 0));
   const layout = buildWbsLayout_(maxDepth, meetings.length, visibleRows.length);
   const dateRange = buildWbsDateRange_(visibleRows, derivedState.derived, options, milestones, meetings, actuals);
+  const holidayDates = wbsJapaneseHolidayDatesInRange_(dateRange);
   layout.totalCols = layout.ganttStartCol + dateRange.dateColumns.length - 1;
   const values = wbsEmptyMatrix_(layout.totalRows, layout.totalCols, '');
   const backgrounds = wbsEmptyMatrix_(layout.totalRows, layout.totalCols, WBS_COLORS.white);
@@ -377,6 +378,8 @@ function buildWbsModel_(rows, options) {
     layout: layout,
     taskRows: visibleRows,
     dateColumns: dateRange.dateColumns,
+    holidayDates: holidayDates,
+    holidayHelperCol: holidayDates.length ? layout.totalCols + 1 : null,
     warning: dateRange.warning,
     sectionRows: visibleRows.filter(function (row) { return row.depth === 1; }).map(function (row) { return row.sheetRow; }),
     normalRows: visibleRows.filter(function (row) { return row.depth !== 1; }).map(function (row) { return row.sheetRow; })
@@ -390,6 +393,7 @@ var WBS_COLORS = {
   header: '#CCCCCC',
   saturday: '#A4C2F4',
   sunday: '#F4CCCC',
+  holiday: '#F4CCCC',
   plan: '#B7E1CD',
   section: '#666666',
   completed: '#B7B7B7',
@@ -753,7 +757,9 @@ function writeWbsSheet_(model, targetSheet) {
   }
   const rowCount = model.values.length;
   const colCount = model.values[0] ? model.values[0].length : 1;
-  ensureWbsSheetSize_(sheet, rowCount, colCount);
+  const holidayDates = model.holidayDates || [];
+  const holidayHelperCol = model.holidayHelperCol || colCount + 1;
+  ensureWbsSheetSize_(sheet, Math.max(rowCount, holidayDates.length), Math.max(colCount, holidayHelperCol));
   sheet.clear();
   sheet.setConditionalFormatRules([]);
   sheet.getRange(1, 1, sheet.getMaxRows(), sheet.getMaxColumns()).clearDataValidations();
@@ -761,6 +767,12 @@ function writeWbsSheet_(model, targetSheet) {
   applyWbsPreValueFormats_(sheet, model, rowCount);
   sheet.getRange(1, 1, rowCount, colCount).setValues(model.values);
   sheet.getRange(1, 1, rowCount, colCount).setBackgrounds(model.backgrounds);
+  if (holidayDates.length) {
+    sheet.getRange(1, holidayHelperCol, holidayDates.length, 1)
+      .setValues(holidayDates.map(function (date) { return [wbsDateValue_(date)]; }))
+      .setNumberFormat('yyyy/mm/dd');
+    sheet.hideColumns(holidayHelperCol, 1);
+  }
   applyWbsTemplateFormats_(sheet, model, rowCount, colCount);
 
   const normalBlocks = wbsRowBlocks_(model.normalRows || []);
@@ -917,6 +929,10 @@ function applyWbsTemplateBorders_(sheet, model) {
 function buildWbsConditionalFormatRules_(sheet, model) {
   const layout = model.layout;
   const rules = [];
+  const holidayCountFormula = wbsHolidayCountFormula_(model, 'S$4');
+  const holidayFormula = wbsHolidayFormula_(model, 'S$4');
+  const sundayFormula = '=AND(' + (holidayCountFormula ? holidayCountFormula + '=0,' : '') + 'WEEKDAY(S$4)=1)';
+  const saturdayFormula = '=AND(' + (holidayCountFormula ? holidayCountFormula + '=0,' : '') + 'WEEKDAY(S$4)=7)';
   if (model.dateColumns.length) {
     const bodyRange = sheet.getRange(layout.milestoneBodyStartRow, layout.ganttStartCol, layout.totalRows - layout.milestoneBodyStartRow + 1, model.dateColumns.length);
     [layout.milestoneStartRow, layout.meetingStartRow].concat(model.sectionRows || []).forEach(function (row) {
@@ -927,14 +943,22 @@ function buildWbsConditionalFormatRules_(sheet, model) {
         .setRanges([sheet.getRange(row, layout.ganttStartCol, 1, model.dateColumns.length)])
         .build());
     });
+    if (holidayFormula) {
+      rules.push(SpreadsheetApp.newConditionalFormatRule()
+        .whenFormulaSatisfied(holidayFormula)
+        .setBackground(WBS_COLORS.holiday)
+        .setFontColor(WBS_COLORS.holiday)
+        .setRanges([bodyRange])
+        .build());
+    }
     rules.push(SpreadsheetApp.newConditionalFormatRule()
-      .whenFormulaSatisfied('=WEEKDAY(S$4)=1')
+      .whenFormulaSatisfied(sundayFormula)
       .setBackground(WBS_COLORS.sunday)
       .setFontColor(WBS_COLORS.sunday)
       .setRanges([bodyRange])
       .build());
     rules.push(SpreadsheetApp.newConditionalFormatRule()
-      .whenFormulaSatisfied('=WEEKDAY(S$4)=7')
+      .whenFormulaSatisfied(saturdayFormula)
       .setBackground(WBS_COLORS.saturday)
       .setFontColor(WBS_COLORS.saturday)
       .setRanges([bodyRange])
@@ -948,7 +972,7 @@ function buildWbsConditionalFormatRules_(sheet, model) {
       return sheet.getRange(block.start, layout.progressCol, block.count, 1);
     });
     rules.push(SpreadsheetApp.newConditionalFormatRule()
-      .whenFormulaSatisfied('=AND(WEEKDAY(S$4)<>1,WEEKDAY(S$4)<>7,S$4>=$K' + layout.taskStartRow + '-0.0001,S$4<=$L' + layout.taskStartRow + '+0.0001)')
+      .whenFormulaSatisfied('=AND(WEEKDAY(S$4)<>1,WEEKDAY(S$4)<>7,' + (holidayCountFormula ? holidayCountFormula + '=0,' : '') + 'S$4>=$K' + layout.taskStartRow + '-0.0001,S$4<=$L' + layout.taskStartRow + '+0.0001)')
       .setBackground(WBS_COLORS.plan)
       .setRanges([taskGanttRange])
       .build());
@@ -969,18 +993,38 @@ function buildWbsConditionalFormatRules_(sheet, model) {
   }
   if (model.dateColumns.length) {
     const headerRange = sheet.getRange(layout.headerRow1, layout.ganttStartCol, 2, model.dateColumns.length);
+    if (holidayFormula) {
+      rules.push(SpreadsheetApp.newConditionalFormatRule()
+        .whenFormulaSatisfied(holidayFormula)
+        .setBackground(WBS_COLORS.holiday)
+        .setRanges([headerRange])
+        .build());
+    }
     rules.push(SpreadsheetApp.newConditionalFormatRule()
-      .whenFormulaSatisfied('=WEEKDAY(S$4)=1')
+      .whenFormulaSatisfied(sundayFormula)
       .setBackground(WBS_COLORS.sunday)
       .setRanges([headerRange])
       .build());
     rules.push(SpreadsheetApp.newConditionalFormatRule()
-      .whenFormulaSatisfied('=WEEKDAY(S$4)=7')
+      .whenFormulaSatisfied(saturdayFormula)
       .setBackground(WBS_COLORS.saturday)
       .setRanges([headerRange])
       .build());
   }
   return rules;
+}
+
+function wbsHolidayCountFormula_(model, headerReference) {
+  if (!model || !model.holidayDates || !model.holidayDates.length || !model.holidayHelperCol) {
+    return '';
+  }
+  const helperColumn = wbsColumnLetter_(model.holidayHelperCol);
+  return 'COUNTIF($' + helperColumn + '$1:$' + helperColumn + '$' + model.holidayDates.length + ',' + headerReference + ')';
+}
+
+function wbsHolidayFormula_(model, headerReference) {
+  const countFormula = wbsHolidayCountFormula_(model, headerReference);
+  return countFormula ? '=' + countFormula + '>0' : '';
 }
 
 function ensureWbsSheetSize_(sheet, rowCount, colCount) {
@@ -1616,6 +1660,135 @@ function wbsIsValidDate_(value) {
   return date.getUTCFullYear() === parts[0] && date.getUTCMonth() === parts[1] - 1 && date.getUTCDate() === parts[2];
 }
 
+function wbsJapaneseHolidayDatesInRange_(dateRange) {
+  if (!dateRange || !Number.isFinite(dateRange.startDay) || !Number.isFinite(dateRange.endDay)) {
+    return [];
+  }
+  const dates = [];
+  for (let day = dateRange.startDay; day <= dateRange.endDay; day += 1) {
+    const dateText = wbsDayToDate_(day);
+    const year = Number(dateText.slice(0, 4));
+    if (wbsJapaneseHolidaysForYear_(year)[dateText]) {
+      dates.push(dateText);
+    }
+  }
+  return dates;
+}
+
+function wbsJapaneseHolidaysForYear_(value) {
+  const year = Math.floor(Number(value));
+  if (!wbsJapaneseHolidaysForYear_.cache) wbsJapaneseHolidaysForYear_.cache = {};
+  if (wbsJapaneseHolidaysForYear_.cache[year]) return wbsJapaneseHolidaysForYear_.cache[year];
+
+  const holidays = {};
+  wbsJapaneseHolidaysForYear_.cache[year] = holidays;
+  if (!Number.isFinite(year) || year < 1948 || year > 2099) return holidays;
+
+  const add = function (month, day, name) {
+    const dateText = year + '-' + String(month).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+    holidays[dateText] = name;
+  };
+  const addNthMonday = function (month, nth, name) {
+    add(month, wbsNthWeekdayOfMonth_(year, month, 1, nth), name);
+  };
+
+  if (year >= 1949) {
+    add(1, 1, '元日');
+    if (year >= 2000) addNthMonday(1, 2, '成人の日');
+    else add(1, 15, '成人の日');
+  }
+  if (year >= 1967) add(2, 11, '建国記念の日');
+  if (year >= 2020) add(2, 23, '天皇誕生日');
+  if (year >= 1949) add(3, wbsJapaneseEquinoxDay_(year, 'spring'), '春分の日');
+
+  if (year >= 2007) add(4, 29, '昭和の日');
+  else if (year >= 1989) add(4, 29, 'みどりの日');
+  else if (year >= 1949) add(4, 29, '天皇誕生日');
+  if (year >= 1949) {
+    add(5, 3, '憲法記念日');
+    if (year >= 2007) add(5, 4, 'みどりの日');
+    add(5, 5, 'こどもの日');
+  }
+
+  if (year >= 1996) {
+    if (year === 2020) add(7, 23, '海の日');
+    else if (year === 2021) add(7, 22, '海の日');
+    else if (year >= 2003) addNthMonday(7, 3, '海の日');
+    else add(7, 20, '海の日');
+  }
+  if (year >= 2016) {
+    if (year === 2020) add(8, 10, '山の日');
+    else if (year === 2021) add(8, 8, '山の日');
+    else add(8, 11, '山の日');
+  }
+  if (year >= 1966) {
+    if (year >= 2003) addNthMonday(9, 3, '敬老の日');
+    else add(9, 15, '敬老の日');
+  }
+  add(9, wbsJapaneseEquinoxDay_(year, 'autumn'), '秋分の日');
+  if (year >= 1966) {
+    if (year === 2020) add(7, 24, 'スポーツの日');
+    else if (year === 2021) add(7, 23, 'スポーツの日');
+    else if (year >= 2000) addNthMonday(10, 2, 'スポーツの日');
+    else add(10, 10, '体育の日');
+  }
+  add(11, 3, '文化の日');
+  add(11, 23, '勤労感謝の日');
+  if (year >= 1989 && year <= 2018) add(12, 23, '天皇誕生日');
+
+  const specialHolidays = {
+    1959: [[4, 10, '皇太子明仁親王の結婚の儀']],
+    1989: [[2, 24, '昭和天皇の大喪の礼']],
+    1990: [[11, 12, '即位礼正殿の儀']],
+    1993: [[6, 9, '皇太子徳仁親王の結婚の儀']],
+    2019: [[5, 1, '天皇の即位の日'], [10, 22, '即位礼正殿の儀']]
+  };
+  (specialHolidays[year] || []).forEach(function (item) { add(item[0], item[1], item[2]); });
+
+  const nationalHolidayDates = {};
+  Object.keys(holidays).forEach(function (dateText) { nationalHolidayDates[dateText] = true; });
+  if (year >= 1986) {
+    const startDay = wbsDateToDay_(year + '-01-02');
+    const endDay = wbsDateToDay_(year + '-12-30');
+    for (let day = startDay; day <= endDay; day += 1) {
+      const dateText = wbsDayToDate_(day);
+      if (nationalHolidayDates[dateText]) continue;
+      if (nationalHolidayDates[wbsDayToDate_(day - 1)] && nationalHolidayDates[wbsDayToDate_(day + 1)]) {
+        holidays[dateText] = '国民の休日';
+      }
+    }
+  }
+
+  if (year >= 1973) {
+    Object.keys(nationalHolidayDates).sort().forEach(function (dateText) {
+      const holidayDay = wbsDateToDay_(dateText);
+      if (holidayDay < wbsDateToDay_('1973-04-12') || wbsDow_(holidayDay) !== 0) return;
+      let substituteDay = holidayDay + 1;
+      if (year >= 2007) {
+        while (holidays[wbsDayToDate_(substituteDay)]) substituteDay += 1;
+      }
+      const substituteDate = wbsDayToDate_(substituteDay);
+      if (!holidays[substituteDate]) holidays[substituteDate] = '振替休日';
+    });
+  }
+  return holidays;
+}
+
+function wbsNthWeekdayOfMonth_(year, month, weekday, nth) {
+  const firstWeekday = wbsDow_(wbsDateToDay_(year + '-' + String(month).padStart(2, '0') + '-01'));
+  return 1 + (weekday - firstWeekday + 7) % 7 + (nth - 1) * 7;
+}
+
+function wbsJapaneseEquinoxDay_(year, season) {
+  const spring = season === 'spring';
+  if (year <= 1979) {
+    const base = spring ? 20.8357 : 23.2588;
+    return Math.floor(base + 0.242194 * (year - 1980) - Math.floor((year - 1983) / 4));
+  }
+  const base = spring ? 20.8431 : 23.2488;
+  return Math.floor(base + 0.242194 * (year - 1980) - Math.floor((year - 1980) / 4));
+}
+
 function wbsDateToDay_(value) {
   if (!wbsIsValidDate_(value)) {
     return NaN;
@@ -1712,6 +1885,9 @@ if (typeof module !== 'undefined' && module.exports) {
     computeWbsDerived_: computeWbsDerived_,
     wbsAdaptiveTextColumnWidth_: wbsAdaptiveTextColumnWidth_,
     wbsDateTextInTimeZone_: wbsDateTextInTimeZone_,
-    wbsColumnLetter_: wbsColumnLetter_
+    wbsColumnLetter_: wbsColumnLetter_,
+    wbsJapaneseHolidaysForYear_: wbsJapaneseHolidaysForYear_,
+    wbsJapaneseHolidayDatesInRange_: wbsJapaneseHolidayDatesInRange_,
+    wbsHolidayFormula_: wbsHolidayFormula_
   };
 }
