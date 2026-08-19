@@ -1,7 +1,8 @@
 /**
  * Read-only, machine-oriented API for CLI and MCP clients.
  *
- * Mutations intentionally continue to use addNode, saveNode, and addComment so
+ * Mutations intentionally continue to use addNode, addNodes, saveNode, deleteNode,
+ * and addComment so
  * every caller shares the same identity, locking, conflict, rollup, cascade,
  * activity-log, and notification behavior as the web client.
  */
