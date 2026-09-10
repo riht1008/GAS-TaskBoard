@@ -497,7 +497,13 @@ function buildWbsDateRange_(visibleRows, derived, options, milestones, meetings,
       days.push(wbsDateToDay_(plan.startDate), wbsDateToDay_(plan.endDate));
     }
     const actual = (actuals || {})[wbsNodeId_(row.node)] || {};
-    if (wbsIsValidDate_(actual.startDate)) days.push(wbsDateToDay_(actual.startDate));
+    if (wbsIsValidDate_(actual.startDate)) {
+      days.push(wbsDateToDay_(actual.startDate));
+      if (!actual.endDate) {
+        const today = wbsClean_(options.today) || wbsDateTextInTimeZone_(options.now) || wbsTodayText_();
+        days.push(wbsDateToDay_(today));
+      }
+    }
     if (wbsIsValidDate_(actual.endDate)) days.push(wbsDateToDay_(actual.endDate));
   });
   (milestones || []).forEach(function (milestone) {
@@ -815,7 +821,7 @@ function applyWbsPreValueFormats_(sheet, model, rowCount) {
 function applyWbsTemplateFormats_(sheet, model, rowCount, colCount) {
   const layout = model.layout;
   sheet.setHiddenGridlines(true);
-  sheet.setFrozenRows(0);
+  sheet.setFrozenRows(layout.headerRow2);
   sheet.setFrozenColumns(layout.taskDisplayCol);
   sheet.getRange(1, 1, rowCount, colCount)
     .setFontFamily('Arial')
@@ -971,6 +977,21 @@ function buildWbsConditionalFormatRules_(sheet, model) {
     const progressRanges = wbsRowBlocks_(model.normalRows || []).map(function (block) {
       return sheet.getRange(block.start, layout.progressCol, block.count, 1);
     });
+    // Delayed starts and finishes stay visible even after completion.
+    const row = layout.taskStartRow;
+    const delayed = 'OR(AND($K' + row + '<>"",IF($N' + row + '="",TODAY(),$N' + row + ')>$K' + row + '),AND($L' + row + '<>"",IF($O' + row + '="",TODAY(),$O' + row + ')>$L' + row + '))';
+    rules.push(SpreadsheetApp.newConditionalFormatRule()
+      .whenFormulaSatisfied('=' + delayed)
+      .setBackground('#FCE8E6')
+      .setFontColor('#B3261E')
+      .setRanges([sheet.getRange(row, layout.planStartCol, taskRows, 3)])
+      .build());
+    rules.push(SpreadsheetApp.newConditionalFormatRule()
+      .whenFormulaSatisfied('=AND($K' + row + '<>"",$L' + row + '<>"",S$4>=$K' + row + ',S$4<=$L' + row + ',' + delayed + ')')
+      .setBackground('#FCE8E6')
+      .setFontColor('#B3261E')
+      .setRanges([taskGanttRange])
+      .build());
     rules.push(SpreadsheetApp.newConditionalFormatRule()
       .whenFormulaSatisfied('=AND(WEEKDAY(S$4)<>1,WEEKDAY(S$4)<>7,' + (holidayCountFormula ? holidayCountFormula + '=0,' : '') + 'S$4>=$K' + layout.taskStartRow + '-0.0001,S$4<=$L' + layout.taskStartRow + '+0.0001)')
       .setBackground(WBS_COLORS.plan)
@@ -1274,7 +1295,7 @@ function wbsActualMarkerFormula_(row, dateCol, actualStartCol, actualEndCol) {
   const dateCell = wbsColumnLetter_(dateCol) + '$4';
   const startCell = '$' + wbsColumnLetter_(actualStartCol) + row;
   const endCell = '$' + wbsColumnLetter_(actualEndCol) + row;
-  return '=IF(AND(' + dateCell + '<>"", ' + dateCell + '>=' + startCell + '-0.0001, ' + dateCell + '<=' + endCell + '+0.0001), "★", "")';
+  return '=IF(AND(' + dateCell + '<>"", ' + startCell + '<>"", ' + dateCell + '>=' + startCell + '-0.0001, ' + dateCell + '<=IF(' + endCell + '="",TODAY(),' + endCell + ')+0.0001), "★", "")';
 }
 
 function wbsTaskNameCol_(layout, depth) {

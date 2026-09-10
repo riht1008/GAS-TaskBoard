@@ -2302,6 +2302,35 @@
       box-shadow: var(--shadow-sm);
     }
 
+    .task-list-table { min-width: 1000px; }
+    .task-list-table[style] { min-width: 0; }
+    .task-list-table th { padding-right: 20px; }
+    .list-column-resizer {
+      position: absolute;
+      right: 0;
+      top: 0;
+      width: 12px;
+      height: 100%;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      cursor: col-resize;
+      touch-action: none;
+    }
+    .list-column-resizer::after {
+      content: '';
+      position: absolute;
+      right: 0;
+      top: 20%;
+      height: 60%;
+      width: 2px;
+      background: var(--color-border);
+    }
+    .list-column-resizer:hover::after,
+    .list-column-resizer:focus-visible::after { background: var(--color-accent); }
+    .task-list-table.resizing,
+    .task-list-table.resizing * { cursor: col-resize; user-select: none; }
+
     table {
       width: 100%;
       border-collapse: collapse;
@@ -2713,10 +2742,11 @@
 
     .axis-month,
     .axis-tick {
+      flex: 0 0 auto;
       min-width: 0;
       display: flex;
       align-items: center;
-      border-right: 1px solid var(--color-border);
+      box-shadow: inset 1px 0 var(--color-border);
       color: var(--color-text-secondary);
       font-family: var(--font-mono);
       font-size: var(--text-xs);

@@ -118,3 +118,20 @@ test('view tabs and gantt display controls persist after user operations', () =>
   assert.match(bindings, /state\.ganttTimelineCollapsed = !state\.ganttTimelineCollapsed;\s*persistViewPreferences\(\);/);
   assert.match(actions, /const onUp = upEvent => \{[\s\S]*?cleanup\(\);\s*persistViewPreferences\(\);/);
 });
+
+test('list column widths persist and restore while malformed saved widths are ignored', () => {
+  const storage = new Map();
+  const first = preferenceContext(storage);
+  first.state.listColumnWidths = [480, 160, 200, 120, 260, 100];
+  first.persistViewPreferences();
+  const next = preferenceContext(storage);
+  next.restoreViewPreferences();
+  assert.deepEqual(Array.from(next.state.listColumnWidths), first.state.listColumnWidths);
+
+  for (const widths of [[480], [480, 160, 200, 120, -1, 100], [480, 160, 200, 120, '260', 100]]) {
+    const invalid = preferenceContext(storage);
+    storage.set(invalid.viewPreferencesKey(), JSON.stringify({ listColumnWidths: widths }));
+    invalid.restoreViewPreferences();
+    assert.equal(invalid.state.listColumnWidths, undefined);
+  }
+});
