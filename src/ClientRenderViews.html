@@ -704,16 +704,10 @@
       return `
         <section class="view">
           <div class="table-wrap" data-preserve-scroll="view:list:table">
-            <table>
+            <table class="task-list-table" ${state.listColumnWidths ? `style="width:${state.listColumnWidths.reduce((sum, width) => sum + width, 0)}px"` : ''}>
+              <colgroup>${[32, 13, 16, 10, 20, 9].map((width, index) => `<col style="width:${state.listColumnWidths ? state.listColumnWidths[index] + 'px' : width + '%'}">`).join('')}</colgroup>
               <thead>
-                <tr>
-                  <th style="width:32%">名称</th>
-                  <th style="width:13%">ステータス</th>
-                  <th style="width:16%">担当</th>
-                  <th style="width:10%">優先度</th>
-                  <th style="width:20%">期間</th>
-                  <th style="width:9%">進捗</th>
-                </tr>
+                <tr>${['名称', 'ステータス', '担当', '優先度', '期間', '進捗'].map((label, index) => `<th>${label}<button type="button" class="list-column-resizer" data-list-resizer="${index}" aria-label="${label}の列幅を調整" title="ドラッグまたは左右キーで列幅を調整"></button></th>`).join('')}</tr>
               </thead>
               <tbody>${renderListRows()}</tbody>
             </table>

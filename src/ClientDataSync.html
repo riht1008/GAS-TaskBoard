@@ -355,6 +355,10 @@
         if (preferences && ['kanban', 'gantt', 'list'].includes(preferences.view)) {
           state.view = preferences.view;
         }
+        const listWidths = preferences && preferences.listColumnWidths;
+        if (Array.isArray(listWidths) && listWidths.length === 6 && listWidths.every(width => Number.isFinite(width) && width >= 80 && width <= 1600)) {
+          state.listColumnWidths = listWidths;
+        }
         const treeWidth = Number(preferences && preferences.ganttTreeWidth);
         if (Number.isFinite(treeWidth)) {
           state.ganttTreeWidth = Math.max(GANTT_TREE_WIDTH_MIN, Math.min(GANTT_TREE_WIDTH_MAX, treeWidth));
@@ -385,6 +389,7 @@
           version: 2,
           collapsedNodeIds,
           view: state.view,
+          listColumnWidths: state.listColumnWidths,
           ganttTreeWidth: state.ganttTreeWidth,
           ganttZoom: state.ganttZoom,
           ganttScaleFactor: state.ganttScaleFactor,

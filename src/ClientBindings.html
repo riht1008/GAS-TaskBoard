@@ -8,6 +8,19 @@
         });
       });
       bindActionAndDraft(app);
+      app.querySelectorAll('[data-list-resizer]').forEach(handle => {
+        handle.addEventListener('pointerdown', startListColumnResize);
+        handle.addEventListener('keydown', event => {
+          if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+          event.preventDefault();
+          const table = handle.closest('table');
+          const widths = listRenderedColumnWidths(table);
+          const index = Number(handle.dataset.listResizer);
+          widths[index] += event.key === 'ArrowRight' ? 16 : -16;
+          applyListColumnWidths(table, widths);
+          persistViewPreferences();
+        });
+      });
       const query = document.getElementById('filterQuery');
       if (query) {
         bindTextCompositionGuard(query, () => {
