@@ -51,7 +51,7 @@
       bindCommon();
       bindDropdowns(app);
       if (state.view === 'kanban') bindKanban();
-      if (state.view === 'list') bindTreeRows();
+      if (state.view === 'list') bindList();
       if (state.view === 'gantt') bindGantt();
       restoreGanttScroll(ganttScroll);
       renderDrawerRoot();
@@ -701,18 +701,25 @@
           </section>
         `;
       }
+      const customWidths = normalizedListColumnWidths_(state.listColumnWidths);
+      const columnWidths = customWidths.length
+        ? customWidths.map(width => `${width}px`)
+        : ['32%', '13%', '16%', '10%', '20%', '9%'];
+      const tableStyle = customWidths.length ? `width:${customWidths.reduce((sum, width) => sum + width, 0)}px;min-width:100%` : '';
+      const headers = ['名称', 'ステータス', '担当', '優先度', '期間', '進捗'];
       return `
         <section class="view">
           <div class="table-wrap" data-preserve-scroll="view:list:table">
-            <table>
+            <table class="list-table ${customWidths.length ? 'has-custom-widths' : ''}" style="${h(tableStyle)}">
+              <colgroup>${columnWidths.map(width => `<col style="width:${h(width)}">`).join('')}</colgroup>
               <thead>
                 <tr>
-                  <th style="width:32%">名称</th>
-                  <th style="width:13%">ステータス</th>
-                  <th style="width:16%">担当</th>
-                  <th style="width:10%">優先度</th>
-                  <th style="width:20%">期間</th>
-                  <th style="width:9%">進捗</th>
+                  ${headers.map((label, index) => `
+                    <th data-list-column-index="${index}">
+                      <span>${h(label)}</span>
+                      <button class="list-column-resizer" type="button" data-list-column-resizer="${index}" title="${h(label)}列の幅を調整" aria-label="${h(label)}列の幅を調整"></button>
+                    </th>
+                  `).join('')}
                 </tr>
               </thead>
               <tbody>${renderListRows()}</tbody>

@@ -392,6 +392,7 @@
         actionLabel: '上書き',
         destructive: false
       });
+      if (dialog.type === 'exportWbsComplete') return renderWbsCompleteDialog(dialog);
       if (dialog.type === 'confirmSlackDisconnect') return renderConfirmDialog({
         title: dialog.slackTarget === 'app' ? 'Slackアプリ連携を解除' : 'ワークフロー連携を解除',
         body: dialog.slackTarget === 'app'
@@ -607,6 +608,28 @@
             <footer class="modal-foot">
               ${renderCloseButton('close-dialog')}
               ${renderSubmitButton({ submitting, iconName: config.destructive ? 'x' : 'check', label: config.actionLabel, className: `button ${config.destructive ? 'destructive' : 'primary'}`, type: 'button', action: config.action })}
+            </footer>
+          </section>
+        </div>
+      `;
+    }
+
+    function renderWbsCompleteDialog(dialog) {
+      return `
+        ${renderOverlay('close-dialog')}
+        <div class="modal-shell">
+          <section class="modal">
+            <header class="modal-head">
+              <div class="modal-title">WBS更新完了</div>
+              <button class="button ghost icon" type="button" data-action="close-dialog" aria-label="完了画面を閉じる">${icon('x')}</button>
+            </header>
+            <div class="modal-body">
+              <div class="wbs-export-complete">${icon('check-circle')}<span>WBSシートを更新しました</span></div>
+              ${dialog.warning ? `<div class="danger-note">${h(dialog.warning)}</div>` : ''}
+            </div>
+            <footer class="modal-foot">
+              <button class="button secondary" type="button" data-action="close-dialog">閉じる</button>
+              ${dialog.wbsSheetUrl ? `<a class="button primary" href="${h(dialog.wbsSheetUrl)}" target="_blank" rel="noopener noreferrer">スプレッドシートでWBSを開く ${icon('arrow-right')}</a>` : ''}
             </footer>
           </section>
         </div>

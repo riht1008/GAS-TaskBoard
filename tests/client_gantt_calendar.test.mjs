@@ -82,6 +82,11 @@ test('every day header in day zoom opens the period override dialog and today wi
   assert.match(styles, /\.axis-day-action\.saturday[\s\S]*\.axis-day-action\.holiday[\s\S]*\.axis-day-action\.today/);
 });
 
+test('gantt body grid lines use the same right edge pixel as header borders', () => {
+  assert.match(styles, /\.gantt-row\s*\{[\s\S]*background-image:\s*linear-gradient\(to right, transparent calc\(100% - 1px\), var\(--color-border\) calc\(100% - 1px\)\);/);
+  assert.match(styles, /\.axis-month,\s*\.axis-tick\s*\{[\s\S]*border-right:\s*1px solid var\(--color-border\);/);
+});
+
 test('milestone and meeting lanes stay fixed beneath the date axis while tasks scroll', () => {
   assert.match(views, /<div class="gantt-left-timeline" style="height:\$\{timelineHeight\}px">[\s\S]*?timelineRows\.map\(renderGanttTimelineTreeRow\)/);
   assert.match(views, /<div class="gantt-left-body" style="height:\$\{taskHeight\}px">[\s\S]*?displayRows\.map\(renderGanttTreeRow\)/);

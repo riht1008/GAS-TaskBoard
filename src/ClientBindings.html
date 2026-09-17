@@ -12,11 +12,13 @@
       if (query) {
         bindTextCompositionGuard(query, () => {
           state.filters.query = query.value;
+          persistViewPreferences();
           scheduleRender();
         });
         query.addEventListener('input', event => {
           state.filters.query = query.value;
           if (event.isComposing || state.textComposing) return;
+          persistViewPreferences();
           scheduleRender();
         });
       }
@@ -485,6 +487,18 @@
       });
     }
 
+    function bindList() {
+      bindTreeRows();
+      document.querySelectorAll('[data-list-column-resizer]').forEach(handle => {
+        handle.addEventListener('pointerdown', startListColumnResize);
+        handle.addEventListener('keydown', event => {
+          if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+          event.preventDefault();
+          resizeListColumnFromKeyboard(handle, event.key === 'ArrowRight' ? 16 : -16);
+        });
+      });
+    }
+
     function bindCreatePreviewTriggers() {
       document.querySelectorAll('.row-add-child[data-parent-id]').forEach(button => {
         button.addEventListener('mouseenter', () => queueCreatePreview(button.dataset.parentId));
@@ -664,6 +678,7 @@
       }
       if (action === 'filter-member') {
         state.filters.assigneeId = event.currentTarget.dataset.memberId || '';
+        persistViewPreferences();
         render();
         return;
       }
@@ -671,6 +686,7 @@
         const memberId = state.currentMember ? state.currentMember.id : '';
         state.filters.assigneeId = state.filters.assigneeId === memberId ? '' : memberId;
         state.openDropdown = '';
+        persistViewPreferences();
         render();
         return;
       }
@@ -748,20 +764,26 @@
       state.filters = { query: '', parentId: '', statusIds: [], assigneeId: '', priority: '', wbsInclusion: '', dateStart: '', dateEnd: '' };
       state.calendarView = null;
       state.openDropdown = '';
+      persistViewPreferences();
     }
 
     function clearFilterField(field) {
       if (field === 'statusIds') {
         state.filters.statusIds = [];
+        persistViewPreferences();
         return;
       }
       if (field === 'date') {
         state.filters.dateStart = '';
         state.filters.dateEnd = '';
         state.calendarView = null;
+        persistViewPreferences();
         return;
       }
-      if (field && Object.prototype.hasOwnProperty.call(state.filters, field)) state.filters[field] = '';
+      if (field && Object.prototype.hasOwnProperty.call(state.filters, field)) {
+        state.filters[field] = '';
+        persistViewPreferences();
+      }
     }
 
     function ensureCalendarView(id) {
@@ -829,6 +851,7 @@
       if (mode !== 'range') {
         state.filters.dateStart = dateText;
         state.filters.dateEnd = dateText;
+        persistViewPreferences();
         closeCalendar();
         render();
         return;
@@ -847,6 +870,7 @@
       const endDay = Math.max(view.rangeAnchor, day);
       state.filters.dateStart = dayToDate(startDay);
       state.filters.dateEnd = dayToDate(endDay);
+      persistViewPreferences();
       closeCalendar();
       render();
     }
@@ -856,6 +880,7 @@
       if (button.dataset.calendarScope === 'filters') {
         state.filters.dateStart = today;
         state.filters.dateEnd = today;
+        persistViewPreferences();
       } else {
         setDraftDate(button.dataset.calendarScope, button.dataset.calendarField, today);
       }
@@ -867,6 +892,7 @@
       if (button.dataset.calendarScope === 'filters') {
         state.filters.dateStart = '';
         state.filters.dateEnd = '';
+        persistViewPreferences();
       } else {
         const inlineNodeId = inlineNodeIdFromScope(button.dataset.calendarScope);
         if (inlineNodeId) {
@@ -1008,6 +1034,7 @@
       } else {
         target[field] = value;
       }
+      if (scope === 'filters') persistViewPreferences();
       if (scope === 'detail' && field === 'progress') {
         const progress = normalizeProgressValue(value);
         target.progress = progress === null ? 0 : progress;

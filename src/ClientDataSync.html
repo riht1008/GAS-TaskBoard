@@ -340,11 +340,56 @@
         });
     }
 
+    function normalizedListColumnWidths_(widths) {
+      if (!Array.isArray(widths) || widths.length !== LIST_COLUMN_MIN_WIDTHS.length) return [];
+      const normalized = widths.map((width, index) => {
+        const numeric = Number(width);
+        if (!Number.isFinite(numeric)) return NaN;
+        return Math.round(Math.max(LIST_COLUMN_MIN_WIDTHS[index], Math.min(LIST_COLUMN_MAX_WIDTH, numeric)));
+      });
+      return normalized.every(Number.isFinite) ? normalized : [];
+    }
+
+    function normalizedStoredFilterDate_(value) {
+      const text = String(value || '').trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return '';
+      const date = new Date(`${text}T00:00:00.000Z`);
+      return Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== text ? '' : text;
+    }
+
+    function normalizedStoredFilters_(filters) {
+      const source = filters && typeof filters === 'object' && !Array.isArray(filters) ? filters : {};
+      const parentId = String(source.parentId || '');
+      const assigneeId = String(source.assigneeId || '');
+      const startDate = normalizedStoredFilterDate_(source.dateStart);
+      const endDate = normalizedStoredFilterDate_(source.dateEnd);
+      const validDateRange = startDate && endDate && startDate <= endDate;
+      const seenStatusIds = new Set();
+      return {
+        query: String(source.query || ''),
+        parentId: parentId && parentId !== state.rootId && state.nodesById.has(parentId) ? parentId : '',
+        statusIds: (Array.isArray(source.statusIds) ? source.statusIds : [])
+          .map(id => String(id || ''))
+          .filter(id => {
+            if (!id || seenStatusIds.has(id) || !state.statusById.has(id)) return false;
+            seenStatusIds.add(id);
+            return true;
+          }),
+        assigneeId: assigneeId && state.memberById.has(assigneeId) ? assigneeId : '',
+        priority: ['High', 'Mid', 'Low'].includes(source.priority) ? source.priority : '',
+        wbsInclusion: ['included', 'excluded'].includes(source.wbsInclusion) ? source.wbsInclusion : '',
+        dateStart: validDateRange ? startDate : '',
+        dateEnd: validDateRange ? endDate : ''
+      };
+    }
+
     function restoreViewPreferences() {
       const key = viewPreferencesKey();
       if (!key) return;
       if (state.viewPreferencesLoadedKey === key) {
         state.collapsed = new Set(validCollapsedNodeIds_(Array.from(state.collapsed)));
+        state.filters = normalizedStoredFilters_(state.filters);
+        state.listColumnWidths = normalizedListColumnWidths_(state.listColumnWidths);
         return;
       }
       state.viewPreferencesLoadedKey = key;
@@ -369,8 +414,12 @@
         if (preferences && typeof preferences.ganttTimelineCollapsed === 'boolean') {
           state.ganttTimelineCollapsed = preferences.ganttTimelineCollapsed;
         }
+        state.listColumnWidths = normalizedListColumnWidths_(preferences && preferences.listColumnWidths);
+        state.filters = normalizedStoredFilters_(preferences && preferences.filters);
       } catch (error) {
         state.collapsed = new Set();
+        state.listColumnWidths = [];
+        state.filters = normalizedStoredFilters_({});
       }
     }
 
@@ -378,17 +427,23 @@
       const key = viewPreferencesKey();
       if (!key) return;
       const collapsedNodeIds = validCollapsedNodeIds_(Array.from(state.collapsed));
+      const listColumnWidths = normalizedListColumnWidths_(state.listColumnWidths);
+      const filters = normalizedStoredFilters_(state.filters);
       state.collapsed = new Set(collapsedNodeIds);
+      state.listColumnWidths = listColumnWidths;
+      state.filters = filters;
       state.viewPreferencesLoadedKey = key;
       try {
         localStorage.setItem(key, JSON.stringify({
-          version: 2,
+          version: 3,
           collapsedNodeIds,
           view: state.view,
           ganttTreeWidth: state.ganttTreeWidth,
           ganttZoom: state.ganttZoom,
           ganttScaleFactor: state.ganttScaleFactor,
-          ganttTimelineCollapsed: state.ganttTimelineCollapsed
+          ganttTimelineCollapsed: state.ganttTimelineCollapsed,
+          listColumnWidths,
+          filters
         }));
       } catch (error) {
         // Display preferences are optional and must never block task operations.

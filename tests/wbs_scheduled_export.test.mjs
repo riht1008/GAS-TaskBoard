@@ -59,6 +59,7 @@ function exportContext(options = {}) {
     },
     writeWbsSheetStaged_: () => {
       calls.writes += 1;
+      return 'https://docs.google.com/spreadsheets/d/test/edit#gid=42';
     }
   });
   vm.runInContext(exportEntrySource(), context);
@@ -73,6 +74,7 @@ test('scheduled WBS export authorizes the trigger creator through Members', () =
   assert.equal(result.ok, true);
   assert.equal(result.version, 1);
   assert.equal(result.rowCount, 1);
+  assert.equal(result.wbsSheetUrl, 'https://docs.google.com/spreadsheets/d/test/edit#gid=42');
   assert.deepEqual(calls.actorNames, ['定期実行者']);
   assert.equal(calls.guardAcquired, 1);
   assert.equal(calls.guardReleased, 1);

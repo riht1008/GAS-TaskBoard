@@ -14,7 +14,10 @@ function doGet(e) {
   template.bootstrapNodeId = safeBootstrapId_(parameters.node);
   template.bootstrapCommentId = safeBootstrapId_(parameters.comment);
   template.bootstrapWebAppUrl = webAppUrl_();
-  return template.evaluate().setTitle('タスク管理');
+  const output = template.evaluate().setTitle('タスク管理');
+  const faviconUrl = typeof APP_FAVICON_URL === 'undefined' ? '' : cleanString_(APP_FAVICON_URL);
+  if (faviconUrl) output.setFaviconUrl(faviconUrl);
+  return output;
 }
 
 function safeBootstrapId_(value) {

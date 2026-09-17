@@ -1021,9 +1021,11 @@
       try {
         const result = await serverCall('exportWbs');
         state.exportWbsSubmitting = false;
-        state.dialog = null;
-        showToast('WBSシートを更新しました', 'success');
-        if (result && result.warning) showToast(result.warning, 'warning');
+        state.dialog = {
+          type: 'exportWbsComplete',
+          wbsSheetUrl: result && result.wbsSheetUrl ? String(result.wbsSheetUrl) : '',
+          warning: result && result.warning ? String(result.warning) : ''
+        };
         render();
       } catch (error) {
         state.exportWbsSubmitting = false;
@@ -2361,6 +2363,87 @@
 
       document.addEventListener('pointermove', onMove);
       document.addEventListener('pointerup', onUp);
+      document.addEventListener('keydown', onKeyDown);
+    }
+
+    function listColumnWidthsFromTable_(table) {
+      if (!table) return [];
+      return Array.from(table.querySelectorAll('thead th[data-list-column-index]'))
+        .map(header => Math.round(header.getBoundingClientRect().width));
+    }
+
+    function applyListColumnWidths_(table, widths) {
+      const normalized = normalizedListColumnWidths_(widths);
+      if (!table || !normalized.length) return [];
+      const columns = Array.from(table.querySelectorAll('colgroup col'));
+      normalized.forEach((width, index) => {
+        if (columns[index]) columns[index].style.width = `${width}px`;
+      });
+      table.style.width = `${normalized.reduce((sum, width) => sum + width, 0)}px`;
+      table.style.minWidth = '100%';
+      table.classList.add('has-custom-widths');
+      return normalized;
+    }
+
+    function resizeListColumnFromKeyboard(handle, delta) {
+      const table = handle && handle.closest('.list-table');
+      const index = Number(handle && handle.dataset.listColumnResizer);
+      const widths = listColumnWidthsFromTable_(table);
+      if (!table || !Number.isInteger(index) || !widths[index]) return;
+      widths[index] += Number(delta) || 0;
+      state.listColumnWidths = applyListColumnWidths_(table, widths);
+      persistViewPreferences();
+    }
+
+    function startListColumnResize(event) {
+      if (event.button !== 0 || event.isPrimary === false) return;
+      const handle = event.currentTarget;
+      const table = handle.closest('.list-table');
+      const index = Number(handle.dataset.listColumnResizer);
+      const startWidths = listColumnWidthsFromTable_(table);
+      if (!table || !Number.isInteger(index) || !startWidths[index]) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const startX = event.clientX;
+      const previousWidths = normalizedListColumnWidths_(state.listColumnWidths);
+      table.classList.add('resizing');
+      handle.setPointerCapture(event.pointerId);
+
+      const applyWidth = clientX => {
+        const next = startWidths.slice();
+        next[index] = startWidths[index] + clientX - startX;
+        state.listColumnWidths = applyListColumnWidths_(table, next);
+      };
+      const onMove = moveEvent => {
+        moveEvent.preventDefault();
+        applyWidth(moveEvent.clientX);
+      };
+      const cleanup = () => {
+        document.removeEventListener('pointermove', onMove);
+        document.removeEventListener('pointerup', onUp);
+        document.removeEventListener('pointercancel', onCancel);
+        document.removeEventListener('keydown', onKeyDown);
+        table.classList.remove('resizing');
+      };
+      const onUp = upEvent => {
+        if (upEvent) applyWidth(upEvent.clientX);
+        cleanup();
+        persistViewPreferences();
+      };
+      const cancel = () => {
+        state.listColumnWidths = previousWidths;
+        cleanup();
+        render();
+      };
+      const onCancel = () => cancel();
+      const onKeyDown = keyEvent => {
+        if (keyEvent.key !== 'Escape') return;
+        cancel();
+      };
+
+      document.addEventListener('pointermove', onMove);
+      document.addEventListener('pointerup', onUp);
+      document.addEventListener('pointercancel', onCancel);
       document.addEventListener('keydown', onKeyDown);
     }
 

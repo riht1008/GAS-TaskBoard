@@ -271,14 +271,15 @@ function exportWbsForActor_(actor, source) {
       createdAt: createdAt,
       version: version
     });
-    writeWbsSheetStaged_(model);
+    const wbsSheetUrl = writeWbsSheetStaged_(model);
     documentProps.setProperty('WBS_CREATED_AT', createdAt);
     documentProps.setProperty('WBS_VERSION', String(version));
     return {
       ok: true,
       version: version,
       rowCount: model.taskRows.length,
-      warning: model.warning || ''
+      warning: model.warning || '',
+      wbsSheetUrl: wbsSheetUrl || ''
     };
   } catch (error) {
     console.error('WBS export (' + exportSource + ') failed after ' + String(Date.now() - startedAt) + 'ms: ' + cleanString_(error && error.stack || error));
@@ -491,6 +492,7 @@ function buildWbsLayout_(maxDepth, meetingCount, taskCount) {
 
 function buildWbsDateRange_(visibleRows, derived, options, milestones, meetings, actuals) {
   const days = [];
+  const today = wbsClean_(options.today) || wbsDateTextInTimeZone_(options.now) || wbsTodayText_();
   visibleRows.forEach(function (row) {
     const plan = wbsPlanForNode_(row.node, derived[wbsNodeId_(row.node)]);
     if (wbsIsValidDate_(plan.startDate) && wbsIsValidDate_(plan.endDate)) {
@@ -499,6 +501,7 @@ function buildWbsDateRange_(visibleRows, derived, options, milestones, meetings,
     const actual = (actuals || {})[wbsNodeId_(row.node)] || {};
     if (wbsIsValidDate_(actual.startDate)) days.push(wbsDateToDay_(actual.startDate));
     if (wbsIsValidDate_(actual.endDate)) days.push(wbsDateToDay_(actual.endDate));
+    else if (wbsIsValidDate_(actual.startDate) && wbsIsValidDate_(today)) days.push(wbsDateToDay_(today));
   });
   (milestones || []).forEach(function (milestone) {
     const date = wbsClean_(wbsGet_(milestone, 'Date', 'date'));
@@ -521,7 +524,6 @@ function buildWbsDateRange_(visibleRows, derived, options, milestones, meetings,
     startDay = Math.min.apply(null, days) - 7;
     endDay = Math.max.apply(null, days) + 7;
   } else {
-    const today = wbsClean_(options.today) || wbsDateTextInTimeZone_(options.now) || wbsTodayText_();
     startDay = wbsDateToDay_(today) - 7;
     endDay = wbsDateToDay_(today) + 30;
   }
@@ -730,6 +732,10 @@ function writeWbsSheetStaged_(model) {
         console.error('WBS backup cleanup failed: ' + cleanString_(cleanupError && cleanupError.message));
       }
     }
+    const spreadsheetUrl = typeof ss.getUrl === 'function' ? cleanString_(ss.getUrl()) : '';
+    return spreadsheetUrl && typeof staging.getSheetId === 'function'
+      ? spreadsheetUrl + '#gid=' + String(staging.getSheetId())
+      : spreadsheetUrl;
   } catch (error) {
     const currentWbs = ss.getSheetByName(WBS_SHEET_NAME);
     backup = ss.getSheetByName(backupName);
@@ -1274,7 +1280,7 @@ function wbsActualMarkerFormula_(row, dateCol, actualStartCol, actualEndCol) {
   const dateCell = wbsColumnLetter_(dateCol) + '$4';
   const startCell = '$' + wbsColumnLetter_(actualStartCol) + row;
   const endCell = '$' + wbsColumnLetter_(actualEndCol) + row;
-  return '=IF(AND(' + dateCell + '<>"", ' + dateCell + '>=' + startCell + '-0.0001, ' + dateCell + '<=' + endCell + '+0.0001), "★", "")';
+  return '=IF(AND(' + dateCell + '<>"", ' + startCell + '<>"", ' + dateCell + '>=' + startCell + '-0.0001, ' + dateCell + '<=IF(' + endCell + '<>"", ' + endCell + ', TODAY())+0.0001), "★", "")';
 }
 
 function wbsTaskNameCol_(layout, depth) {

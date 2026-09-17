@@ -2,7 +2,10 @@
  * Shared configuration and sheet schema.
  */
 
-var APP_VERSION = '1.11.0';
+var APP_VERSION = '1.12.0';
+// Set an HTTPS image URL with a file extension to replace the default GAS favicon.
+// Leave blank to keep the platform default. Google Drive URLs may need `&.png`.
+var APP_FAVICON_URL = '';
 var LOCK_WAIT_MS = 15000;
 var DAY_MS = 24 * 60 * 60 * 1000;
 var DRAFT_TTL_MS = 24 * 60 * 60 * 1000;

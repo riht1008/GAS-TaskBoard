@@ -33,6 +33,7 @@ function fakeSpreadsheet(options = {}) {
   return {
     oldWbs,
     sheets,
+    getUrl() { return 'https://docs.google.com/spreadsheets/d/test-sheet/edit'; },
     getSheetByName(name) { return sheets.find(sheet => sheet.name === name) || null; },
     insertSheet(name) {
       const sheet = makeSheet(name, nextId++);
@@ -64,18 +65,19 @@ function runStagedWriter(spreadsheet) {
     writeWbsSheet_: (_model, sheet) => { sheet.rendered = true; }
   });
   vm.runInContext(stagedWriterSource(), context);
-  context.writeWbsSheetStaged_({ values: [['ok']] });
+  return context.writeWbsSheetStaged_({ values: [['ok']] });
 }
 
 test('WBS staging publishes a complete new sheet and removes the backup', () => {
   const spreadsheet = fakeSpreadsheet();
 
-  runStagedWriter(spreadsheet);
+  const wbsUrl = runStagedWriter(spreadsheet);
 
   assert.equal(spreadsheet.sheets.length, 1);
   assert.equal(spreadsheet.sheets[0].name, 'WBS');
   assert.equal(spreadsheet.sheets[0].rendered, true);
   assert.notEqual(spreadsheet.sheets[0].id, spreadsheet.oldWbs.id);
+  assert.equal(wbsUrl, 'https://docs.google.com/spreadsheets/d/test-sheet/edit#gid=2');
 });
 
 test('WBS staging restores the previous sheet when publication fails', () => {

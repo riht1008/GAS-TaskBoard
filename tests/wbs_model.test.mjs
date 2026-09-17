@@ -350,6 +350,25 @@ test('manual actual range overrides activity history and expands the WBS date ra
   assert.ok(model.dateColumns.some(column => column.date === '2026-05-01'));
 });
 
+test('an actual start without an end marks through today and extends the date grid', () => {
+  const rows = baseRows();
+  const task = rows.nodes.find(node => node.NodeId === 'c1');
+  task.ActualStartDate = '2026-07-01';
+  task.ActualEndDate = '';
+  const model = buildWbsModel_(rows, {
+    actorName: '佐藤',
+    now: '2026-08-24T00:00:00.000Z',
+    createdAt: '2026-07-03T00:00:00.000Z',
+    version: 1
+  });
+  const taskRow = model.taskRows.find(row => row.node.NodeId === 'c1');
+  const todayIndex = model.dateColumns.findIndex(column => column.date === '2026-08-24');
+  assert.notEqual(todayIndex, -1);
+  const formula = model.values[taskRow.sheetRow - 1][model.layout.ganttStartCol + todayIndex - 1];
+  assert.match(formula, /\$N\d+<>""/);
+  assert.match(formula, /IF\(\$O\d+<>"", \$O\d+, TODAY\(\)\)/);
+});
+
 test('manual actual start keeps the activity-derived end date', () => {
   const logs = [
     { NodeId: 'a', Field: 'status', ChangedAt: '2026-07-02T00:00:00.000Z', NewValueIsDone: false },
